@@ -20,8 +20,16 @@ func Mux(goos string) bool { return goos != "windows" }
 // two handshakes through the jump (client 017 R4).
 var MuxOptions = []string{"ControlMaster auto", "ControlPath ~/.ssh/cs-%C", "ControlPersist 10m"}
 
+// AliveOptions make the client notice a dead connection (about two minutes) instead of hanging
+// silently when a session breaks while idle.
+var AliveOptions = []string{"ServerAliveInterval 30", "ServerAliveCountMax 4"}
+
 // Block renders the block of cli.md for server (host[:port]) and user; mux adds MuxOptions.
-func Block(server, user string, mux bool) string {
+func Block(server, user string, mux bool) string { return BlockWith(server, user, mux, "") }
+
+// BlockWith is Block plus an optional private-key path: without it ssh only tries its default key
+// names, so a key with another name gets "Permission denied (publickey)".
+func BlockWith(server, user string, mux bool, identity string) string {
 	host, port := server, ""
 	if h, p, ok := strings.Cut(server, ":"); ok && !strings.Contains(p, ":") {
 		host, port = h, p
@@ -31,8 +39,12 @@ func Block(server, user string, mux bool) string {
 		jump = "-p " + port + " " + jump
 	}
 	extra := ""
+	if identity != "" {
+		extra += "  IdentityFile " + identity + "\n  IdentitiesOnly yes\n"
+	}
+	extra += "  " + strings.Join(AliveOptions, "\n  ") + "\n"
 	if mux {
-		extra = "  " + strings.Join(MuxOptions, "\n  ") + "\n"
+		extra += "  " + strings.Join(MuxOptions, "\n  ") + "\n"
 	}
 	return fmt.Sprintf("%s\nHost *.cs\n  ProxyCommand ssh -W %%n:22 %s\n  User %s\n  UserKnownHostsFile ~/.ssh/cs_known_hosts\n  StrictHostKeyChecking yes\n%s%s\n", Begin, jump, user, extra, End)
 }

@@ -139,8 +139,8 @@ func (a *agent) Run(ctx context.Context, ping, maxBack time.Duration) error {
 	}
 	a.startPanel(ctx)
 	gpuName := setup.Detect().GPU
-	diskEnforced := !a.hasIncus() || setup.QuotaDriver(setup.StorageDriver()) // card 016 R2: never claim a limit that nothing enforces
-	withShared := func() proto.Stats {                                        // what the owner shares, so the list shows it instead of the host totals (card 016 R3)
+	diskEnforced := !a.hasIncus() || setup.DiskEnforced() // card 016 R2: never claim a limit that nothing enforces
+	withShared := func() proto.Stats {                    // what the owner shares, so the list shows it instead of the host totals (card 016 R3)
 		st := coll.Collect()
 		l := a.c.Limits
 		if c, err := config.Load(); err == nil {

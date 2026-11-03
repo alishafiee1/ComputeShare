@@ -76,6 +76,7 @@ func setupCmd(a []string) {
 	api := fs.String("api", "", "broker HTTPS URL (default https://<host>)")
 	user := fs.String("user", "", "default space user (default user)")
 	host := fs.String("server-host", "", "DNS name for the TLS certificate when --server is an IP")
+	id := fs.String("identity", "", "private key file ssh should use for *.cs (needed when it is not a default name)")
 	fs.Parse(a)
 	_, err := os.Stat(filepath.Join(cfgDir(), "config.json"))
 	if err != nil || *srv != "" || *api != "" || *user != "" || *host != "" {
@@ -96,6 +97,7 @@ func setupCmd(a []string) {
 		}
 		initCfg(s, *api, u, *host)
 	}
+	saveIdentity(*id)
 	c := load()
 	setupSSH(c)
 	problems := knownHosts(c)

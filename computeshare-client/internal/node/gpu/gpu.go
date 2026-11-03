@@ -37,6 +37,10 @@ func Plan(e Env, idx int) (config []string, devices [][]string, err error) {
 			[][]string{
 				{"csgpu", "unix-char", "source=/dev/dxg", "path=/dev/dxg"},
 				{"cswsllib", "disk", "source=/usr/lib/wsl/lib", "path=/usr/lib/wsl/lib", "readonly=true"},
+				// the NVIDIA user-space driver lives in the Windows driver store (a 9p mount); without it
+				// nvidia-smi inside the space says "couldn't communicate with the NVIDIA driver". The kernel
+				// does not allow recursive and read-only together, so this one is not marked readonly (the mount itself is ro).
+				{"cswsldrv", "disk", "source=/usr/lib/wsl/drivers", "path=/usr/lib/wsl/drivers", "recursive=true"},
 			}, nil
 	}
 	if !e.Driver || !e.Toolkit {
@@ -79,7 +83,7 @@ func Enable(inst string, e Env, idx int) error {
 
 // Disable removes every GPU device/config we added (R3 off).
 func Disable(inst string) {
-	for _, d := range []string{"csgpu", "cswsllib", "gpu"} {
+	for _, d := range []string{"csgpu", "cswsllib", "cswsldrv", "gpu"} {
 		incus.Run(nil, "config", "device", "remove", inst, d)
 	}
 	for _, k := range []string{"nvidia.runtime", "nvidia.driver.capabilities", "environment.LD_LIBRARY_PATH"} {

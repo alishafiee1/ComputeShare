@@ -23,6 +23,19 @@ func TestIdempotentAndOutside(t *testing.T) {
 	}
 }
 
+// a key with a non-default name must be named in the block, and every block makes dead connections visible.
+func TestIdentityAndAlive(t *testing.T) {
+	b := BlockWith("h", "u", false, "/home/me/.ssh/id_ed25519_cs")
+	for _, want := range []string{"  IdentityFile /home/me/.ssh/id_ed25519_cs\n", "  IdentitiesOnly yes\n", "  ServerAliveInterval 30\n", "  ServerAliveCountMax 4\n"} {
+		if !strings.Contains(b, want) {
+			t.Fatalf("missing %q in\n%s", want, b)
+		}
+	}
+	if b := Block("h", "u", false); strings.Contains(b, "IdentityFile") || !strings.Contains(b, "ServerAliveInterval 30") {
+		t.Fatal(b)
+	}
+}
+
 // client 017 R4: connection sharing except on Windows.
 func TestMux(t *testing.T) {
 	if b := Block("h", "u", true); !strings.Contains(b, "  ControlMaster auto\n  ControlPath ~/.ssh/cs-%C\n  ControlPersist 10m\n"+End) {

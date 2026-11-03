@@ -14,7 +14,7 @@ func TestPlan(t *testing.T) {
 		t.Fatal(c, d)
 	}
 	c, d, _ = Plan(Env{WSL: true}, 0)
-	if !strings.Contains(c[0], "/usr/lib/wsl/lib") || d[0][1] != "unix-char" || d[1][4] != "readonly=true" {
+	if !strings.Contains(c[0], "/usr/lib/wsl/lib") || d[0][1] != "unix-char" || d[1][4] != "readonly=true" || len(d) != 3 || d[2][0] != "cswsldrv" || d[2][3] != "path=/usr/lib/wsl/drivers" {
 		t.Fatal(c, d)
 	}
 }

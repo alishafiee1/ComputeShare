@@ -1,6 +1,6 @@
 //go:build !windows
 
-// csnode: ComputeShare node agent and owner CLI (Apache-2.0).
+// csnode: ComputeShare node agent and owner CLI (Apache-2.0). See rodo/computeshare-client.
 package main
 
 import (
@@ -570,7 +570,7 @@ func cmdDoctor(args []string) {
 		// umbrella card 016: say plainly when a limit is set but not enforced or not visible in the space
 		drv := setup.StorageDriver()
 		fmt.Println("storage pool driver:", orDash(drv))
-		if c.Limits.Disk != "" && !setup.QuotaDriver(drv) {
+		if c.Limits.Disk != "" && !setup.DiskEnforced() {
 			fmt.Printf("limits: WARN disk limit %s is NOT enforced: the pool driver %q has no quotas, so the space can fill the whole disk. Use a btrfs, zfs or lvm pool (create one with `incus storage create` and move the root disk with the owner's consent).\n", c.Limits.Disk, drv)
 		}
 		if !setup.LXCFSActive() {

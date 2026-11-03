@@ -32,6 +32,8 @@ type Config struct {
 	User   string `json:"user"`
 	// APIHost is the DNS name the HTTPS certificate must match when API uses an IP (client 022 R3).
 	APIHost string `json:"api_host,omitempty"`
+	// Identity is the private key `cs setup-ssh` writes as IdentityFile (for keys not named id_ed25519, id_rsa ...).
+	Identity string `json:"identity,omitempty"`
 }
 
 func cfgDir() string {
@@ -85,7 +87,7 @@ func usage() {
   cs setup [--server host:port] [--server-host name]   (no invite needed: init + setup-ssh + known-hosts in one go)
   cs add <name> <SHA256:...> [--server host:port]   (the line a node owner gives you: sets up everything)
   cs init [--server node.n3xus.ir:2222] [--api https://node.n3xus.ir] [--user user] [--server-host name]
-  cs setup-ssh
+  cs setup-ssh [--identity ~/.ssh/key]
   cs nodes [--json]
   cs known-hosts
   cs trust <name> <SHA256:...>
@@ -124,6 +126,10 @@ func main() {
 	case "release":
 		releaseCmd(a)
 	case "setup-ssh":
+		fs := flag.NewFlagSet("setup-ssh", flag.ExitOnError)
+		id := fs.String("identity", "", "private key file ssh should use for *.cs (needed when it is not a default name)")
+		fs.Parse(a)
+		saveIdentity(*id)
 		setupSSH(load())
 		fmt.Println("ssh config updated; next: cs known-hosts, then ssh <name>.cs")
 	case "nodes":
@@ -235,8 +241,25 @@ func initCfg(srv, api, user, apiHost string) {
 	fmt.Println("saved", filepath.Join(cfgDir(), "config.json"))
 }
 
+// saveIdentity remembers the key path in config.json (an empty path keeps what is there).
+func saveIdentity(path string) {
+	if path == "" {
+		return
+	}
+	c := load()
+	if abs, err := filepath.Abs(path); err == nil {
+		path = abs
+	}
+	if _, err := os.Stat(path); err != nil {
+		die(1, "identity file not found: %s", path)
+	}
+	c.Identity = filepath.ToSlash(path)
+	b, _ := json.MarshalIndent(c, "", "  ")
+	os.WriteFile(filepath.Join(cfgDir(), "config.json"), b, 0o600)
+}
+
 func setupSSH(c Config) {
-	w, err := sshconfig.Apply(filepath.Join(sshDir(), "config"), sshconfig.Block(c.Server, c.User, sshconfig.Mux(runtime.GOOS)))
+	w, err := sshconfig.Apply(filepath.Join(sshDir(), "config"), sshconfig.BlockWith(c.Server, c.User, sshconfig.Mux(runtime.GOOS), c.Identity))
 	if err != nil {
 		die(1, "%v", err)
 	}
