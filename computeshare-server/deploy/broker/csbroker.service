@@ -1,0 +1,47 @@
+[Unit]
+Description=ComputeShare SSH broker (csbroker)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=csbroker
+Group=csbroker
+ExecStart=/usr/local/bin/csbroker serve --config /etc/csbroker.yaml --state /var/lib/csbroker
+Restart=on-failure
+RestartSec=5s
+StateDirectory=csbroker
+StateDirectoryMode=0700
+UMask=0077
+ReadWritePaths=/srv/mirror
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+MemoryMax=512M
+TasksMax=256
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

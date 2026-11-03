@@ -1,0 +1,46 @@
+{{define "index.html"}}<!doctype html>
+<html lang="fa" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ComputeShare · {{.S.Name}}</title><link rel="stylesheet" href="/static/app.css"><script src="/static/app.js" defer></script></head>
+<body><header><strong>ComputeShare</strong> <span>{{.S.Name}}</span></header>
+<main>
+{{if .Flash}}<p class="flash">{{.Flash}}</p>{{end}}{{if .Error}}<p class="error">{{.Error}}</p>{{end}}
+<section class="card">
+<h2>وضعیت اتصال</h2>
+<p>اتصال به سرور: {{if .S.Tunnel}}<b class="ok">وصل</b>{{else}}<b class="bad">قطع</b> (دوباره تلاش می‌کند){{end}} — <span dir="ltr">{{.S.Server}}</span></p>
+<p>اشتراک‌گذاری: {{if .S.Sharing}}<b class="ok">روشن</b>{{else}}<b class="bad">خاموش</b>{{end}}</p>
+<p>فضا: <span dir="ltr">{{.S.Space}} {{.S.SpaceIP}}</span></p>
+<p>اتصال برای کاربران: <code dir="ltr">ssh -J join@{{.S.JumpHost}}:2222 {{.S.User}}@{{.S.Name}}</code></p>
+<p>اثر انگشت کلید: <code dir="ltr">{{.S.HostKeyFP}}</code></p>
+<form method="post" action="/share"><input type="hidden" name="csrf" value="{{.CSRF}}">
+{{if .S.Sharing}}<input type="hidden" name="on" value="0"><button class="danger" data-confirm="اشتراک خاموش شود و همهٔ اتصال‌ها قطع شوند؟">خاموش کردن اشتراک</button>
+{{else}}<input type="hidden" name="on" value="1"><button>روشن کردن اشتراک</button>{{end}}</form>
+</section>
+<section class="card">
+<h2>سقف منابع</h2>
+<p class="muted">خالی یعنی نامحدود. پیشنهاد: پهنای باند 20Mbit و حجم روزانه 20GB/day. مصرف امروز: {{printf "%.2f" .S.UsedTodayGB}} GB{{if .S.QuotaReached}} — <b class="bad">سقف روزانه پر شده</b>{{end}}</p>
+<form method="post" action="/limits" class="grid"><input type="hidden" name="csrf" value="{{.CSRF}}">
+<label>پردازنده (تعداد هسته) <input name="cpu" value="{{.S.CPU}}" dir="ltr" placeholder="4"></label>
+<label>حافظه <input name="memory" value="{{.S.Memory}}" dir="ltr" placeholder="8GiB"></label>
+<label>پهنای باند <input name="bandwidth" value="{{.S.Bandwidth}}" dir="ltr" placeholder="20Mbit"></label>
+<label>حجم روزانه <input name="quota" value="{{.S.Quota}}" dir="ltr" placeholder="20GB/day"></label>
+<button>ذخیره</button></form>
+</section>
+<section class="card">
+<h2>اتصال‌های فعلی</h2>
+<table><tr><th>شناسه</th><th>آی‌پی</th><th>از راه</th><th>مدت</th><th></th></tr>
+{{range .Sessions}}<tr><td>{{.ID}}</td><td dir="ltr">{{.SrcIP}}</td><td>{{.Via}}</td><td dir="ltr">{{since .Started}}</td>
+<td><form method="post" action="/kick" class="inline"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="id" value="{{.ID}}"><button class="danger">قطع</button></form>
+<form method="post" action="/kick" class="inline"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="ip" value="{{.SrcIP}}"><button class="danger">قطع همهٔ این آی‌پی</button></form></td></tr>
+{{else}}<tr><td colspan="5" class="muted">الان کسی وصل نیست.</td></tr>{{end}}
+</table>
+</section>
+{{if .PerUser}}<section class="card">
+<h2>کاربران</h2>
+<table><tr><th>نام</th><th>وضعیت</th><th>آخرین ورود</th><th>دیسک</th><th>اتصال</th><th></th></tr>
+{{range .Users}}<tr><td dir="ltr">{{.Name}}</td><td>{{.State}}</td><td dir="ltr">{{.LastLogin}}</td><td dir="ltr">{{.Disk}}</td><td>{{.Sessions}}</td>
+<td><form method="post" action="/users" class="inline"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="name" value="{{.Name}}">
+{{if .Disabled}}<input type="hidden" name="disabled" value="0"><button>فعال کردن</button>{{else}}<input type="hidden" name="disabled" value="1"><button class="danger">غیرفعال و قطع</button>{{end}}</form></td></tr>
+{{else}}<tr><td colspan="6" class="muted">هنوز کاربری نیست. با <code dir="ltr">csnode users add &lt;name&gt;</code> بسازید.</td></tr>{{end}}
+</table>
+</section>{{end}}
+</main></body></html>{{end}}

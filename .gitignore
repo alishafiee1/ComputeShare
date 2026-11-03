@@ -1,0 +1,6 @@
+# Local build output of cs (rebuild with go build ./cmd/cs)
+/bin/
+/dist/
+
+__pycache__/
+graphify-out/

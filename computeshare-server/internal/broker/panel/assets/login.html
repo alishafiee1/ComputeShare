@@ -1,0 +1,7 @@
+{{define "login.html"}}{{template "head" .}}
+<form method="post" action="/panel/login" class="card" autocomplete="on">
+<label>Username <input name="username" required maxlength="64" autocomplete="username"></label>
+<label>Password <input name="password" type="password" required autocomplete="current-password"></label>
+<button>Sign in</button>
+</form>
+{{template "foot" .}}{{end}}

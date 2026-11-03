@@ -1,0 +1,7 @@
+{{define "logs.html"}}{{template "head" .}}
+<p class="muted">Metadata only (who, when, how much). Session content is end-to-end encrypted and never visible to the server.</p>
+<table><tr><th>#</th><th>Node</th><th>Via</th><th>Client IP</th><th>Started</th><th>Ended</th><th>Up</th><th>Down</th></tr>
+{{range .Data}}<tr><td>{{.ID}}</td><td>{{.Node}}</td><td>{{.Via}}</td><td>{{.SrcIP}}</td><td>{{ts .StartedAt}}</td><td>{{if .EndedAt}}{{ts .EndedAt}}{{else}}live{{end}}</td><td>{{bytes .Up}}</td><td>{{bytes .Down}}</td></tr>
+{{else}}<tr><td colspan="8" class="muted">No connections yet.</td></tr>{{end}}
+</table>
+{{template "foot" .}}{{end}}

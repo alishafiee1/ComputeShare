@@ -1,0 +1,20 @@
+{{define "nodes.html"}}{{template "head" .}}
+<p class="muted" data-autorefresh="15">Auto-refresh every 15 s. Load = CPU now / average 24 h.</p>
+<table>
+<tr><th>Name</th><th>Status</th><th>OS</th><th>CPU</th><th>RAM</th><th>GPU</th><th>Load</th><th>RAM use</th><th>GPU use</th><th>Limits</th><th>Uptime</th><th>Last seen</th><th>Host key</th><th>Actions</th></tr>
+{{range .Data}}<tr class="st-{{.Status}}">
+<td>{{.Name}}</td><td>{{.Status}}</td><td>{{.OS}}/{{.Arch}} {{.Version}}</td>
+<td>{{.Specs.CPU}}</td><td>{{if .Specs.RAMGB}}{{.Specs.RAMGB}} GB{{end}}</td><td>{{.Specs.GPU}}</td>
+<td>{{pct .LoadNow}} / {{pct .Avg24h}}</td><td>{{pct .RAMPct}}</td><td>{{pct .GPUPct}}</td>
+<td>{{orunl .Limits.Bandwidth}}, {{orunl .Limits.Quota}}</td><td>{{dur .UptimeS}}</td><td>{{ts .LastSeen}}</td><td><code>{{.HostKeyFP}}</code></td>
+<td class="actions">
+{{$id := .ID}}{{$csrf := $.CSRF}}
+{{if eq .Status "pending"}}<form method="post" action="/panel/nodes/{{$id}}/approve"><input type="hidden" name="csrf" value="{{$csrf}}"><button>Approve</button></form>{{end}}
+{{if or (eq .Status "online") (eq .Status "paused")}}<form method="post" action="/panel/nodes/{{$id}}/disconnect"><input type="hidden" name="csrf" value="{{$csrf}}"><button>Disconnect</button></form>{{end}}
+{{if eq .Status "banned"}}<form method="post" action="/panel/nodes/{{$id}}/unban"><input type="hidden" name="csrf" value="{{$csrf}}"><button>Unban</button></form>
+{{else}}<form method="post" action="/panel/nodes/{{$id}}/ban" data-confirm="Ban {{.Name}}?"><input type="hidden" name="csrf" value="{{$csrf}}"><button class="danger">Ban</button></form>{{end}}
+<form method="post" action="/panel/nodes/{{$id}}/release" data-confirm="Remove {{.Name}} and free its name?"><input type="hidden" name="csrf" value="{{$csrf}}"><button class="danger">Remove</button></form>
+</td></tr>
+{{else}}<tr><td colspan="14" class="muted">No nodes yet. Create a join token and run csnode setup on a computer.</td></tr>{{end}}
+</table>
+{{template "foot" .}}{{end}}

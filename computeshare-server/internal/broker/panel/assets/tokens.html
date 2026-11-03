@@ -1,0 +1,18 @@
+{{define "tokens.html"}}{{template "head" .}}
+{{if .Data.NewToken}}<p class="card">New token (shown once): <code class="secret">{{.Data.NewToken}}</code></p>{{end}}
+<form method="post" action="/panel/tokens" class="card row">
+<input type="hidden" name="csrf" value="{{.CSRF}}">
+<label>Label <input name="label" maxlength="64" placeholder="family"></label>
+<label>Valid for (hours, 0 = no expiry) <input name="ttl_hours" type="number" min="0" value="168"></label>
+<label>Max uses (0 = unlimited) <input name="uses" type="number" min="0" value="1"></label>
+<button>Create token</button>
+</form>
+<table><tr><th>ID</th><th>Label</th><th>Uses</th><th>Max</th><th>Expires</th><th>Revoked</th><th>Created</th><th></th></tr>
+{{range .Data.Tokens}}<tr><td>{{.ID}}</td><td>{{.Label}}</td><td>{{.Uses}}</td>
+<td>{{if .MaxUses.Valid}}{{.MaxUses.Int64}}{{else}}∞{{end}}</td>
+<td>{{if .ExpiresAt.Valid}}{{ts .ExpiresAt.Int64}}{{else}}never{{end}}</td>
+<td>{{if .Revoked.Valid}}{{ts .Revoked.Int64}}{{else}}-{{end}}</td><td>{{ts .CreatedAt}}</td>
+<td>{{if not .Revoked.Valid}}<form method="post" action="/panel/tokens/{{.ID}}/revoke" data-confirm="Revoke {{.ID}}?"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="danger">Revoke</button></form>{{end}}</td></tr>
+{{else}}<tr><td colspan="8" class="muted">No tokens.</td></tr>{{end}}
+</table>
+{{template "foot" .}}{{end}}

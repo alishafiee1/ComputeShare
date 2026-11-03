@@ -1,0 +1,22 @@
+# /etc/csbroker.yaml  (key: value; read by `csbroker serve`; flags override keys)
+state: /var/lib/csbroker
+# The ONLY SSH port. Users connect with: ssh -J join@node.n3xus.ir:2222 user@<node>
+# (port 22 belongs to the host's sshd). There are no per-node ports in v2.
+ssh: 0.0.0.0:2222
+# Registration API, WSS tunnel and admin panel. Never public directly: publish through
+# nginx (deploy/nginx/node.n3xus.ir.conf). With nginx in Docker, listen on the Docker
+# bridge gateway (example: 172.18.0.1:8088); with nginx on the host use 127.0.0.1:8088.
+http: 127.0.0.1:8088          # nginx in Docker : 172.18.0.1:8088 + deploy/systemd/10-docker-bridge.conf + ufw rule (DEPLOY.md §6, §9)
+# Only these peers may set X-Forwarded-For / X-Real-IP (the nginx container network).
+# Empty = trust nobody (the socket address is used).
+trusted_proxies: 127.0.0.1/32, 172.18.0.0/16   # narrow to nginx's fixed IP when it has one (DEPLOY.md §5)
+# true = a new node stays "pending" until an admin approves it (panel or `csbroker node approve`)
+require_approval: false
+# admin web panel at https://node.n3xus.ir/panel/ (set a password first: csbroker admin set-password)
+panel: true
+# keep true in production (HTTPS); false only for a plain-HTTP lab
+panel_secure_cookie: true
+# Rate limits per client IP (card 008). Empty = defaults 60 / 12 / 60. Exhausting a limit never bans.
+# limit_ssh_per_min: 60
+# limit_tunnel_per_min: 12
+# limit_api_per_min: 60

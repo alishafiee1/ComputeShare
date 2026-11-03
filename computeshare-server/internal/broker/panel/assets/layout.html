@@ -1,0 +1,14 @@
+{{define "head"}}<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{.Title}} · ComputeShare</title><link rel="stylesheet" href="/panel/static/app.css"><script src="/panel/static/app.js" defer></script></head>
+<body>
+<header><strong>ComputeShare</strong>
+{{if .User}}<nav><a href="/panel/">Nodes</a><a href="/panel/tokens">Tokens</a><a href="/panel/logs">Connections</a><a href="/panel/audit">Audit</a></nav>
+<form method="post" action="/panel/logout" class="inline"><input type="hidden" name="csrf" value="{{.CSRF}}"><span class="muted">{{.User}}</span> <button>Sign out</button></form>{{end}}
+</header>
+<main>
+<h1>{{.Title}}</h1>
+{{if .Flash}}<p class="flash">{{.Flash}}</p>{{end}}
+{{if .Error}}<p class="error">{{.Error}}</p>{{end}}
+{{end}}
+{{define "foot"}}</main></body></html>{{end}}

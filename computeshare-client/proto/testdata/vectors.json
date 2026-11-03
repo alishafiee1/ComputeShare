@@ -1,0 +1,31 @@
+{
+  "seed_hex_doc": "000102..1f",
+  "device_pubkey": "ed25519:A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=",
+  "register": {
+    "proto": 2,
+    "name": "myBrotherPc",
+    "token": "\u003credacted-in-vectors\u003e",
+    "device_pubkey": "ed25519:A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=",
+    "host_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGtyVzAyP3cQ0e1v1d0x8h9mJx2dS0x3sT5pQwqk4hYb",
+    "host_key_sig": "EV5vL2PeAKx1H8V6JS+EOhtCRXiZRM3Nskx78ec9LCctRawZvuh24/LS6NEStwHP4+6cOMnwsNh13i1iKZ9IBw==",
+    "registered_at": 1792130000,
+    "os": "linux",
+    "arch": "amd64",
+    "specs": {
+      "cpu": "8c",
+      "ram_gb": 16,
+      "gpu": "RTX 4070 12GB",
+      "disk_gb": 100
+    },
+    "limits": {
+      "bandwidth": "20Mbit",
+      "quota": "20GB/day"
+    },
+    "version": "0.1.0"
+  },
+  "hello_node_id": "n_01HVECTOR",
+  "hello_ts": 1792130100,
+  "hello_sig": "MnDNNGRVUfbFaOo71so2Vc3ZDRib+9OH8yOjMO2nU0hC86rEBQE+sXB6xoTFNmMcLKGMwLcRzHV17S+qXbYVAg==",
+  "leave_sig": "+KZ8MYJDhYmQdHjKzAFK6XuB3GMx74oOssjtRxYlnuk3Jgjla1WSP6eMaFP1iepgMcLb5ob1VPMDPKpKcIyNAg==",
+  "host_key_fingerprint": "SHA256:ULnuwjdiB57gEbetbZklPMZCL9D2SjYJZcZjsR8hMwk"
+}

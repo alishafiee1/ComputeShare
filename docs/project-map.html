@@ -1,0 +1,609 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>نقشهٔ پروژه</title>
+<style>
+:root{
+  --bg:#f5f6fa; --card:#ffffff; --ink:#1d2433; --muted:#5d667a; --line:#d9deea;
+  --shadow:0 1px 2px rgba(20,30,60,.06),0 8px 22px rgba(20,30,60,.10);
+  --done:#1f9d63; --doing:#d98a00; --todo:#7b8499; --paused:#5b7fd6;
+  --track:#e6e9f2;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#12151d; --card:#1b2030; --ink:#e8ebf4; --muted:#9aa3b8; --line:#2c3350;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 22px rgba(0,0,0,.35);
+    --done:#3fc48a; --doing:#f0b33a; --todo:#8f98ad; --paused:#7d9cf0; --track:#2a3148;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#12151d; --card:#1b2030; --ink:#e8ebf4; --muted:#9aa3b8; --line:#2c3350;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 22px rgba(0,0,0,.35);
+  --done:#3fc48a; --doing:#f0b33a; --todo:#8f98ad; --paused:#7d9cf0; --track:#2a3148;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:Vazirmatn,"Segoe UI",Tahoma,sans-serif;line-height:1.8}
+.wrap{max-width:1040px;margin:0 auto;padding:20px 16px 48px}
+header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}
+h1{font-size:1.5rem;margin:0}
+.tagline{color:var(--muted);margin:2px 0 0}
+.theme{background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:6px 12px;cursor:pointer;font:inherit}
+button{font:inherit}
+button:focus-visible,summary:focus-visible{outline:3px solid hsl(220 90% 60%);outline-offset:2px}
+.hint{background:var(--card);border:1px dashed var(--line);border-radius:12px;padding:10px 14px;color:var(--muted);font-size:.92rem;margin-bottom:14px}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:6px}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:.85rem;border-radius:999px;padding:1px 10px;border:1px solid currentColor}
+.s-done{color:var(--done)} .s-doing{color:var(--doing)} .s-todo{color:var(--todo)} .s-paused{color:var(--paused)}
+
+/* map */
+.map{position:relative;aspect-ratio:16/10;min-height:430px;background:var(--card);border-radius:20px;box-shadow:var(--shadow);overflow:hidden}
+.map svg{position:absolute;inset:0;width:100%;height:100%}
+.map line{stroke:var(--line);stroke-width:2;stroke-dasharray:5 6}
+.center,.node{position:absolute;transform:translate(-50%,-50%);border:0;cursor:pointer;text-align:center;color:var(--ink)}
+.center{left:50%;top:50%;width:150px;height:150px;border-radius:50%;background:conic-gradient(var(--done) calc(var(--p)*1%),var(--track) 0);padding:9px;box-shadow:var(--shadow)}
+.center>span{display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;height:100%;border-radius:50%;background:var(--card);font-weight:700;padding:8px;line-height:1.4}
+.center small{font-weight:400;color:var(--muted)}
+.node{width:170px;padding:12px 10px;border-radius:18px;background:var(--card);
+  border-top:5px solid hsl(var(--h) 70% 50%);box-shadow:var(--shadow);transition:transform .15s,box-shadow .15s}
+.node:hover,.node[aria-pressed="true"]{transform:translate(-50%,-50%) scale(1.06);box-shadow:0 10px 28px hsl(var(--h) 70% 40% / .28)}
+.node .ic{font-size:1.5rem;display:block}
+.node b{display:block;font-size:.98rem}
+.node .pct{font-size:.8rem;color:var(--muted)}
+.bar{height:7px;border-radius:99px;background:var(--track);overflow:hidden;margin-top:6px}
+.bar i{display:block;height:100%;border-radius:99px;background:hsl(var(--h) 70% 48%)}
+
+/* panel */
+.panel{margin-top:16px;background:var(--card);border-radius:16px;box-shadow:var(--shadow);padding:16px 18px;border-right:6px solid hsl(var(--h,220) 70% 50%)}
+.panel h2{margin:0 0 4px;font-size:1.15rem}
+.panel p{margin:6px 0}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.chip{background:hsl(var(--h,220) 70% 50% / .13);color:var(--ink);border-radius:8px;padding:0 9px;font-size:.84rem;direction:ltr;unicode-bidi:isolate}
+.go{background:hsl(var(--h,220) 70% 45%);color:#fff;border:0;border-radius:12px;padding:8px 18px;cursor:pointer;margin-top:8px}
+.go:hover{filter:brightness(1.1)}
+
+/* group view */
+.back{background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:6px 14px;cursor:pointer;margin-bottom:12px}
+.ghead{border-radius:18px;background:var(--card);box-shadow:var(--shadow);padding:16px 18px;border-top:6px solid hsl(var(--h) 70% 50%);margin-bottom:14px}
+.ghead h2{margin:0;font-size:1.3rem}
+.items{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+details.item{background:var(--card);border-radius:14px;box-shadow:var(--shadow);border-right:5px solid hsl(var(--h) 70% 50%);padding:10px 14px}
+details.item summary{cursor:pointer;list-style:none;display:flex;flex-wrap:wrap;align-items:center;gap:8px;justify-content:space-between}
+details.item summary::-webkit-details-marker{display:none}
+details.item summary b{font-size:1rem}
+details.item .more{margin-top:8px;border-top:1px solid var(--line);padding-top:8px}
+.next{color:var(--muted);font-size:.9rem}
+footer{margin-top:28px;color:var(--muted);font-size:.85rem;text-align:center}
+
+@media (max-width:720px){
+  .map{aspect-ratio:auto;min-height:0;display:flex;flex-direction:column;align-items:stretch;gap:12px;padding:16px}
+  .map svg{display:none}
+  .center,.node{position:static;transform:none;width:auto}
+  .center{align-self:center;width:150px;height:150px}
+  .node:hover,.node[aria-pressed="true"]{transform:none}
+  .items{grid-template-columns:1fr}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div><h1 id="title"></h1><p class="tagline" id="tagline"></p></div>
+    <button class="theme" id="theme" type="button">🌓 روشن / تاریک</button>
+  </header>
+  <div id="app"></div>
+  <footer id="foot"></footer>
+</div>
+
+<script type="application/json" id="pm-data">{
+ "title": "نقشهٔ پروژه ComputeShare",
+ "shortName": "ComputeShare",
+ "tagline": "سیستم‌هایمان را به هم قرض بدهیم، امن و بدون دردسر",
+ "updated": "2026-11-02",
+ "about": "فرض کن کامپیوتر برادرت اکثر وقت‌ها بیکار است. این پروژه اجازه می‌دهد یک گوشهٔ جدا و امن از آن کامپیوتر (یک لینوکس مجازی) به دیگران قرض داده شود. مهمان از راه دور وصل می‌شود، بدون دسترسی به فایل‌ها یا شبکهٔ خانهٔ صاحب سیستم. وسط راه یک سرور داخل ایران فقط مثل میز نگهبانی عمل می‌کند و چیزی از محتوا نمی‌بیند.",
+ "tech": [
+  "Go",
+  "Incus",
+  "SSH",
+  "WebSocket",
+  "SQLite",
+  "nginx"
+ ],
+ "groups": [
+  {
+   "id": "node",
+   "name": "سیستم عضو (نود)",
+   "icon": "💻",
+   "hue": 215,
+   "plain": "کامپیوتر قرض‌دهنده. روی آن برنامهٔ csnode نصب می‌شود و یک لینوکس جدا برای مهمان‌ها می‌سازد. صاحب سیستم همیشه کنترل دارد.",
+   "tech": [
+    "csnode",
+    "Incus",
+    "WSL2",
+    "Go"
+   ],
+   "items": [
+    {
+     "name": "فضای جدا و امن",
+     "plain": "یک لینوکس کامل ولی محبوس داخل سیستم عضو ساخته می‌شود. مهمان فقط همین را می‌بیند، نه فایل‌های شخصی صاحب سیستم را.",
+     "tech": [
+      "Incus"
+     ],
+     "status": "done",
+     "progress": 100,
+     "next": ""
+    },
+    {
+     "name": "کنترل‌های صاحب سیستم",
+     "plain": "خاموش و روشن کردن اشتراک، تعیین سقف منابع، مسدود کردن آدرس‌ها و کلید اضطراری که همه‌چیز را فوراً قطع می‌کند.",
+     "tech": [
+      "csnode stop",
+      "csnode block"
+     ],
+     "status": "done",
+     "progress": 100,
+     "next": ""
+    },
+    {
+     "name": "پنل محلی صاحب سیستم",
+     "plain": "یک صفحهٔ وب روی خود سیستم که صاحب آن وضعیت را می‌بیند و تنظیمات را عوض می‌کند.",
+     "tech": [
+      "Go",
+      "HTML"
+     ],
+     "status": "done",
+     "progress": 100,
+     "next": ""
+    },
+    {
+     "name": "فضای جدا برای هر کاربر",
+     "plain": "الان همهٔ مهمان‌ها یک فضا را شریک‌اند. قرار است هر مهمان فضای شخصی و ماندگار خودش را داشته باشد.",
+     "tech": [
+      "SSH gateway"
+     ],
+     "status": "doing",
+     "progress": 85,
+     "next": "آزمون روی یک سیستم Incus واقعی"
+    },
+    {
+     "name": "نصب امن و سخت‌تر کردن",
+     "plain": "نصب از میرور با بسته‌های امضاشده، بستن شبکه‌های داخلی روی مهمان و سقف تعداد اتصال‌ها.",
+     "tech": [
+      "apt",
+      "Ed25519"
+     ],
+     "status": "doing",
+     "progress": 80,
+     "next": "آزمون با میرور دست‌کاری‌شده"
+    },
+    {
+     "name": "ویندوز و WSL2",
+     "plain": "روی ویندوز اول یک لینوکس کوچک (WSL2) گذاشته می‌شود و Incus داخل آن اجرا می‌شود. نصاب ویندوز هنوز روی سخت‌افزار واقعی امتحان نشده.",
+     "tech": [
+      "WSL2",
+      "Inno Setup"
+     ],
+     "status": "doing",
+     "progress": 70,
+     "next": "ساخت و آزمون نصاب روی ویندوز تمیز"
+    },
+    {
+     "name": "کارت گرافیک در فضا",
+     "plain": "مهمان بتواند از کارت گرافیک NVIDIA سیستم عضو برای هوش مصنوعی استفاده کند.",
+     "tech": [
+      "NVIDIA",
+      "Incus GPU"
+     ],
+     "status": "doing",
+     "progress": 60,
+     "next": "آزمون روی سخت‌افزار واقعی"
+    },
+    {
+     "name": "راه‌اندازی یک‌دستوری",
+     "plain": "صاحب سیستم فقط یک دستور (setup) بزند و بقیه خودکار انجام شود.",
+     "tech": [
+      "csnode setup"
+     ],
+     "status": "doing",
+     "progress": 85,
+     "next": "آزمون پذیرش"
+    }
+   ]
+  },
+  {
+   "id": "server",
+   "name": "سرور واسط",
+   "icon": "🛰️",
+   "hue": 160,
+   "plain": "مرکز تلفن شبکه، داخل ایران. نودها را ثبت می‌کند و مهمان‌ها را به نود درست می‌رساند. هیچ کدی اجرا نمی‌کند و محتوای ارتباط را نمی‌بیند.",
+   "tech": [
+    "csbroker",
+    "SQLite",
+    "nginx",
+    "Go"
+   ],
+   "items": [
+    {
+     "name": "ثبت و فهرست نودها",
+     "plain": "نودها ثبت می‌شوند و فهرست آن‌ها با آمار بار و سخت‌افزار دیده می‌شود.",
+     "tech": [
+      "SQLite"
+     ],
+     "status": "done",
+     "progress": 100,
+     "next": ""
+    },
+    {
+     "name": "پنل مدیریت سرور",
+     "plain": "صفحهٔ وب برای مدیر: دیدن نودها، رویدادها و مدیریت دسترسی‌ها.",
+     "tech": [
+      "Go",
+      "HTML"
+     ],
+     "status": "done",
+     "progress": 100,
+     "next": ""
+    },
+    {
+     "name": "محافظت در برابر سوءاستفاده",
+     "plain": "محدودیت تعداد درخواست و مسدود کردن مهاجم‌ها.",
+     "tech": [
+      "rate limit"
+     ],
+     "status": "done",
+     "progress": 100,
+     "next": ""
+    },
+    {
+     "name": "ورود دومرحله‌ای مدیر",
+     "plain": "علاوه بر رمز، یک کد شش‌رقمی از برنامهٔ احراز هویت هم لازم است. کد و تست‌ها آماده‌اند.",
+     "tech": [
+      "TOTP"
+     ],
+     "status": "doing",
+     "progress": 90,
+     "next": "فعال‌سازی روی سرور واقعی بعد از استقرار"
+    },
+    {
+     "name": "میرور داخل ایران",
+     "plain": "یک کپی از فایل‌های نصب روی سرور داخلی تا بدون اینترنت جهانی هم بشود نصب کرد.",
+     "tech": [
+      "nginx",
+      "sync.sh"
+     ],
+     "status": "doing",
+     "progress": 60,
+     "next": "لینک نصب هنوز جواب نمی‌دهد"
+    },
+    {
+     "name": "استقرار نسخهٔ جدید روی سرور واقعی",
+     "plain": "گذاشتن نسخهٔ امضاشده روی سرور واقعی، با پشتیبان و راه برگشت. فقط با تأیید مالک.",
+     "tech": [
+      "systemd"
+     ],
+     "status": "todo",
+     "progress": 10,
+     "next": "اول انتشار نسخهٔ امضاشده"
+    }
+   ]
+  },
+  {
+   "id": "guest",
+   "name": "ورود و استفادهٔ مهمان",
+   "icon": "🔑",
+   "hue": 28,
+   "plain": "کاری که مهمان می‌کند تا به یک نود وصل شود. با ابزار cs یا با ssh معمولی.",
+   "tech": [
+    "cs",
+    "SSH"
+   ],
+   "items": [
+    {
+     "name": "ورود با SSH",
+     "plain": "با یک دستور ssh ساده و استاندارد وارد فضای نود می‌شوی. ویرایشگرها و ابزارهای هوش مصنوعی هم همین را بلدند.",
+     "tech": [
+      "SSH"
+     ],
+     "status": "done",
+     "progress": 100,
+     "next": ""
+    },
+    {
+     "name": "ابزار cs",
+     "plain": "تنظیمات ssh را خودکار می‌نویسد و هویت نود را بررسی می‌کند تا کسی جای آن را نگیرد.",
+     "tech": [
+      "cs"
+     ],
+     "status": "done",
+     "progress": 100,
+     "next": ""
+    },
+    {
+     "name": "اتصال ساده‌تر با دعوت‌نامه",
+     "plain": "مهمان با یک دعوت‌نامه و یک دستور وصل شود، بدون تنظیم دستی.",
+     "tech": [
+      "cs setup"
+     ],
+     "status": "doing",
+     "progress": 85,
+     "next": "آزمون پذیرش"
+    },
+    {
+     "name": "تست سرعت و سلامت نود",
+     "plain": "قبل از استفاده بفهمی نود سالم و سریع است یا نه.",
+     "tech": [
+      "cs bench"
+     ],
+     "status": "doing",
+     "progress": 90,
+     "next": "تأیید توضیح ساده"
+    },
+    {
+     "name": "پنل اعضا",
+     "plain": "صفحهٔ وب برای اعضا: آدرس سرور، نقش‌ها، رمز و کلیدها و مدیریت سرویس‌ها.",
+     "tech": [
+      "HTML"
+     ],
+     "status": "doing",
+     "progress": 20,
+     "next": "فقط فهرست مسدودی ساخته شده"
+    }
+   ]
+  },
+  {
+   "id": "link",
+   "name": "اتصال و امنیت",
+   "icon": "🔒",
+   "hue": 280,
+   "plain": "راهی که نود و سرور به هم وصل می‌شوند و راهی که امنیت حفظ می‌شود.",
+   "tech": [
+    "WSS",
+    "yamux",
+    "SSH"
+   ],
+   "items": [
+    {
+     "name": "تونل خروجی",
+     "plain": "نود خودش به سرور وصل می‌شود، پس نیازی به باز کردن پورت مودم نیست و پشت مودم خانگی هم کار می‌کند.",
+     "tech": [
+      "WebSocket",
+      "yamux"
+     ],
+     "status": "done",
+     "progress": 100,
+     "next": ""
+    },
+    {
+     "name": "رمزنگاری سرتاسری",
+     "plain": "رمزنگاری مستقیم بین مهمان و نود است. سرور فقط بایت‌های رمزشده را رد می‌کند.",
+     "tech": [
+      "SSH"
+     ],
+     "status": "done",
+     "progress": 100,
+     "next": ""
+    },
+    {
+     "name": "اتصال پایدار",
+     "plain": "قطع‌شدن‌های دوره‌ای تونل و مشکل DNS در WSL کم شود.",
+     "tech": [
+      "keepalive"
+     ],
+     "status": "doing",
+     "progress": 70,
+     "next": "تنظیم .wslconfig و زمان‌های nginx"
+    },
+    {
+     "name": "پاکسازی نشست‌های مرده",
+     "plain": "اتصال‌های رهاشده و گیرکرده خودکار جمع شوند و فهرست «چه کسی وصل است» درست باشد.",
+     "tech": [
+      "sessions"
+     ],
+     "status": "doing",
+     "progress": 90,
+     "next": "دیدن نتیجه روی سرور واقعی"
+    },
+    {
+     "name": "سقف منابع واقعی",
+     "plain": "اگر صاحب سیستم ۴ هسته و ۸ گیگ رم داده، مهمان واقعاً بیشتر نبیند و بیشتر مصرف نکند.",
+     "tech": [
+      "lxcfs",
+      "quota"
+     ],
+     "status": "doing",
+     "progress": 65,
+     "next": "سهمیهٔ دیسک با استخر btrfs"
+    }
+   ]
+  },
+  {
+   "id": "release",
+   "name": "انتشار و کیفیت",
+   "icon": "📦",
+   "hue": 340,
+   "plain": "اطمینان از اینکه نسخه‌ها دست‌کاری نشده‌اند و کار منظم و قابل ردیابی است.",
+   "tech": [
+    "Ed25519",
+    "GitHub",
+    "RODO",
+    "Graphify"
+   ],
+   "items": [
+    {
+     "name": "امضای نسخه‌ها",
+     "plain": "هر نسخه با یک کلید خصوصی امضا می‌شود و نصاب فقط فایل امضاشده را قبول می‌کند. کلید جدید ساخته شد؛ اولین نسخهٔ امضاشده مانده.",
+     "tech": [
+      "Ed25519"
+     ],
+     "status": "doing",
+     "progress": 70,
+     "next": "اجرای اسکریپت انتشار با رمز کلید"
+    },
+    {
+     "name": "ردیابی نسخه‌ها روی GitHub",
+     "plain": "کد روی GitHub است و باید هر نسخه یک برچسب و امضا داشته باشد.",
+     "tech": [
+      "GitHub",
+      "release.sh"
+     ],
+     "status": "doing",
+     "progress": 60,
+     "next": "برچسب v0.2.0 و انتشار"
+    },
+    {
+     "name": "تست نهایی سرتاسری",
+     "plain": "یک آزمون کامل از نصب تا ورود مهمان، برای پیدا کردن باگ‌های آخر.",
+     "tech": [
+      "e2e"
+     ],
+     "status": "todo",
+     "progress": 10,
+     "next": "بعد از استقرار"
+    },
+    {
+     "name": "روش کار و نقشهٔ کد",
+     "plain": "برنامه‌ریزی با کارت‌های RODO و نقشهٔ خودکار کد با Graphify تا هر جلسه از جای قبل ادامه پیدا کند.",
+     "tech": [
+      "RODO",
+      "Graphify"
+     ],
+     "status": "done",
+     "progress": 100,
+     "next": ""
+    }
+   ]
+  },
+  {
+   "id": "ai",
+   "name": "ربات و هوش مصنوعی",
+   "icon": "🤖",
+   "hue": 190,
+   "plain": "کاربردهای نمونه: ربات‌هایی که از کارت گرافیک نود استفاده می‌کنند.",
+   "tech": [
+    "Telegram",
+    "Whisper",
+    "Ollama"
+   ],
+   "items": [
+    {
+     "name": "ربات نمونهٔ صدا به متن",
+     "plain": "یک ربات نمونه که پیام صوتی را به متن تبدیل می‌کند، به‌همراه راهنما برای ابزارهای هوش مصنوعی.",
+     "tech": [
+      "Whisper"
+     ],
+     "status": "doing",
+     "progress": 60,
+     "next": "اجرای واقعی با کارت گرافیک"
+    },
+    {
+     "name": "سناریوی کامل ربات",
+     "plain": "ربات تلگرام یا بله با چند ایجنت که روی نود کار می‌کنند.",
+     "tech": [
+      "Telegram",
+      "Bale"
+     ],
+     "status": "doing",
+     "progress": 40,
+     "next": "فاز ۶ سناریو"
+    },
+    {
+     "name": "مدل‌های آماده در میرور",
+     "plain": "مدل‌های هوش مصنوعی از قبل در میرور ایران باشند. به تصمیم تو فعلاً اجرا نمی‌شود.",
+     "tech": [
+      "Ollama"
+     ],
+     "status": "paused",
+     "progress": 0,
+     "next": "فعلاً اجرا نشود"
+    }
+   ]
+  }
+ ]
+}</script>
+<script>
+const D=JSON.parse(document.getElementById('pm-data').textContent);
+const ST={done:['✓','تمام شده'],doing:['◐','در حال انجام'],todo:['○','شروع نشده'],paused:['⏸','فعلاً متوقف']};
+function el(t,a={},...c){const e=document.createElement(t);for(const[k,v]of Object.entries(a)){
+  if(k==='class')e.className=v;else if(k.startsWith('on'))e.addEventListener(k.slice(2),v);else e.setAttribute(k,v);}
+  for(const x of c.flat()){if(x==null)continue;e.append(x&&x.nodeType?x:document.createTextNode(x));}return e;}
+const avg=a=>a.length?Math.round(a.reduce((s,x)=>s+x,0)/a.length):0;
+const gp=g=>avg(g.items.map(i=>i.progress));
+const total=()=>avg(D.groups.flatMap(g=>g.items.map(i=>i.progress)));
+const pill=s=>el('span',{class:'pill s-'+s},ST[s][0]+' '+ST[s][1]);
+const chips=l=>el('div',{class:'chips'},(l||[]).map(t=>el('span',{class:'chip'},t)));
+const hue=g=>'--h:'+g.hue;
+const app=document.getElementById('app');
+let selected=null;
+
+document.getElementById('title').textContent=D.title;
+document.getElementById('tagline').textContent=D.tagline||'';
+document.title=D.title;
+document.getElementById('foot').textContent='آخرین به‌روزرسانی: '+D.updated+' · درصدها تقریبی‌اند و از وضعیت کارها حساب شده‌اند.';
+
+function renderMap(){
+  app.replaceChildren();
+  app.append(el('div',{class:'hint'},
+    'روی هر دایره بزن تا توضیح ساده‌اش را ببینی، بعد دکمهٔ «ورود به زیربخش‌ها» را بزن.',
+    el('div',{class:'legend'},Object.keys(ST).map(pill))));
+  const n=D.groups.length, map=el('div',{class:'map'});
+  const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+  svg.setAttribute('aria-hidden','true');
+  const nodes=[];
+  D.groups.forEach((g,i)=>{
+    const a=-Math.PI/2+i*2*Math.PI/n, x=50+37*Math.cos(a), y=50+36*Math.sin(a);
+    const ln=document.createElementNS('http://www.w3.org/2000/svg','line');
+    ln.setAttribute('x1','50%');ln.setAttribute('y1','50%');ln.setAttribute('x2',x+'%');ln.setAttribute('y2',y+'%');
+    svg.append(ln);
+    nodes.push(el('button',{class:'node',type:'button','aria-pressed':String(selected===g.id),
+      style:hue(g)+';left:'+x+'%;top:'+y+'%',
+      onclick:()=>{selected=g.id;renderMap();document.getElementById('panel').scrollIntoView({block:'nearest',behavior:'smooth'});}},
+      el('span',{class:'ic','aria-hidden':'true'},g.icon||'●'),el('b',{},g.name),
+      el('span',{class:'pct'},gp(g)+'٪'),el('div',{class:'bar'},el('i',{style:'width:'+gp(g)+'%'}))));
+  });
+  const c=el('button',{class:'center',type:'button',style:'--p:'+total(),
+    onclick:()=>{selected='_about';renderMap();}},
+    el('span',{},D.shortName||D.title,el('small',{},total()+'٪ کل پروژه')));
+  map.append(svg,c,...nodes);app.append(map);
+  const panel=el('div',{class:'panel',id:'panel'});
+  if(selected==='_about'||!selected){
+    panel.append(el('h2',{},'این پروژه چیست؟'),el('p',{},D.about||''),chips(D.tech));
+  }else{
+    const g=D.groups.find(x=>x.id===selected);
+    panel.setAttribute('style',hue(g));
+    panel.append(el('h2',{},g.icon+' '+g.name),el('p',{},g.plain),chips(g.tech),
+      el('p',{class:'next'},g.items.length+' زیربخش · '+gp(g)+'٪ پیشرفت'),
+      el('button',{class:'go',type:'button',onclick:()=>show(g.id)},'ورود به زیربخش‌ها ←'));
+  }
+  app.append(panel);
+}
+function renderGroup(g){
+  app.replaceChildren();
+  app.append(el('button',{class:'back',type:'button',onclick:()=>show(null)},'→ بازگشت به نقشه'));
+  app.append(el('div',{class:'ghead',style:hue(g)},el('h2',{},g.icon+' '+g.name),el('p',{},g.plain),chips(g.tech),
+    el('div',{class:'bar'},el('i',{style:'width:'+gp(g)+'%'}))));
+  const wrap=el('div',{class:'items'});
+  g.items.forEach(it=>{
+    wrap.append(el('details',{class:'item',style:hue(g)},
+      el('summary',{},el('b',{},it.name),el('span',{},pill(it.status),' ',it.progress+'٪')),
+      el('div',{class:'more'},el('p',{},it.plain),chips(it.tech),
+        el('div',{class:'bar'},el('i',{style:'width:'+it.progress+'%'})),
+        it.next?el('p',{class:'next'},'قدم بعدی: '+it.next):null)));
+  });
+  app.append(wrap);window.scrollTo(0,0);
+}
+function show(id){
+  try{location.hash=id?'#g-'+id:'';}catch(e){}
+  const g=id&&D.groups.find(x=>x.id===id);
+  g?renderGroup(g):renderMap();
+}
+function route(){const m=/^#g-(.+)$/.exec(location.hash);show(m?m[1]:null);}
+addEventListener('hashchange',route);route();
+document.getElementById('theme').addEventListener('click',()=>{
+  const r=document.documentElement,dark=matchMedia('(prefers-color-scheme:dark)').matches;
+  const cur=r.dataset.theme||(dark?'dark':'light');r.dataset.theme=cur==='dark'?'light':'dark';
+});
+</script>
+</body>
+</html>

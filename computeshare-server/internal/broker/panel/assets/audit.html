@@ -1,0 +1,6 @@
+{{define "audit.html"}}{{template "head" .}}
+<table><tr><th>#</th><th>Time</th><th>Actor</th><th>IP</th><th>Action</th><th>Detail</th></tr>
+{{range .Data}}<tr><td>{{.ID}}</td><td>{{ts .TS}}</td><td>{{.Actor}}</td><td>{{.IP}}</td><td>{{.Action}}</td><td>{{.Detail}}</td></tr>
+{{else}}<tr><td colspan="6" class="muted">Empty.</td></tr>{{end}}
+</table>
+{{template "foot" .}}{{end}}
