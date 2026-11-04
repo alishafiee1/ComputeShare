@@ -35,7 +35,8 @@ func Plan(e Env, idx int) (config []string, devices [][]string, err error) {
 	if e.WSL {
 		return []string{"environment.LD_LIBRARY_PATH=/usr/lib/wsl/lib"},
 			[][]string{
-				{"csgpu", "unix-char", "source=/dev/dxg", "path=/dev/dxg"},
+				// mode 0666: the default is 0660 root:root, so the space user (not root) got "GPU access blocked".
+				{"csgpu", "unix-char", "source=/dev/dxg", "path=/dev/dxg", "mode=0666"},
 				{"cswsllib", "disk", "source=/usr/lib/wsl/lib", "path=/usr/lib/wsl/lib", "readonly=true"},
 				// the NVIDIA user-space driver lives in the Windows driver store (a 9p mount); without it
 				// nvidia-smi inside the space says "couldn't communicate with the NVIDIA driver". The kernel
@@ -71,6 +72,9 @@ func Enable(inst string, e Env, idx int) error {
 	if err := incus.Start(inst); err != nil {
 		return err
 	}
+	if e.WSL {
+		incus.Exec(inst, nil, "sh", "-c", WSLGuestSetup) // best effort: ssh sessions find nvidia-smi and its library
+	}
 	if _, err := incus.Exec(inst, nil, "sh", "-c", "PATH=$PATH:/usr/lib/wsl/lib nvidia-smi -L"); err != nil {
 		Disable(inst)
 		if e.WSL {
@@ -80,6 +84,12 @@ func Enable(inst string, e Env, idx int) error {
 	}
 	return nil
 }
+
+// WSLGuestSetup lets plain ssh sessions (which ignore incus' environment.* keys) find nvidia-smi
+// and libnvidia-ml.so without LD_LIBRARY_PATH. Idempotent.
+const WSLGuestSetup = `echo /usr/lib/wsl/lib > /etc/ld.so.conf.d/cs-wsl.conf; (ldconfig || /sbin/ldconfig) 2>/dev/null
+grep -q '^PATH=' /etc/environment 2>/dev/null || echo 'PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/lib/wsl/lib"' >> /etc/environment
+true`
 
 // Disable removes every GPU device/config we added (R3 off).
 func Disable(inst string) {
