@@ -12,4 +12,4 @@ for f in csnode-linux-amd64 csnode-authkeys-linux-amd64; do [ -f "$DIST/$f" ] ||
 command -v debootstrap >/dev/null || { echo "debootstrap is not installed (sudo apt install debootstrap)" >&2; exit 1; }
 BIN="$(mktemp -d)"; trap 'rm -rf "$BIN"' EXIT
 cp "$DIST/csnode-linux-amd64" "$BIN/csnode"; cp "$DIST/csnode-authkeys-linux-amd64" "$BIN/csnode-authkeys"
-cd "$(dirname "$0")" && BIN="$BIN" OUT="$OUT" ./build.sh
+cd "$(dirname "$0")" && BIN="$BIN" OUT="$OUT" bash ./build.sh

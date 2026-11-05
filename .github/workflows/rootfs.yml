@@ -35,7 +35,7 @@ jobs:
           ./cs-linux-amd64 release verify SHA256SUMS
           echo "csnode taken from release: $TAG" >> "$GITHUB_STEP_SUMMARY"
       - name: Build the rootfs
-        run: computeshare-client/deploy/mirror/wsl-rootfs/build-from-dist.sh dist "$PWD/csnode-linux-rootfs.tar.gz"
+        run: bash computeshare-client/deploy/mirror/wsl-rootfs/build-from-dist.sh dist "$PWD/csnode-linux-rootfs.tar.gz"
       - name: Show the result
         run: |
           ls -la csnode-linux-rootfs.tar.gz
