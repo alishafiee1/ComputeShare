@@ -94,9 +94,25 @@ func wslconfigCheck(memGiB, cpus int) {
 	}
 }
 
+// wslDataDir is where the Linux system file (the WSL virtual disk, with the node's space inside) lives.
+// The installer asks for it (so it can sit on a roomy drive such as D:); the default is under ProgramData on C:.
+func wslDataDir(arg string) (string, error) {
+	if arg == "" {
+		return filepath.Join(os.Getenv("ProgramData"), "csnode", "wsl"), nil
+	}
+	if strings.HasPrefix(arg, `\\`) || !filepath.IsAbs(arg) {
+		return "", fmt.Errorf(`the data folder must be on a local drive, like D:\ComputeShare (got %q)`, arg)
+	}
+	return filepath.Clean(arg), nil
+}
+
 // R2/R3: install WSL + import distro from the mirror rootfs
-func install(rootfs string) {
+func install(rootfs, dataDir string) {
 	preflight()
+	dir, err := wslDataDir(dataDir)
+	if err != nil {
+		die(1, "%v", err)
+	}
 	// card 012 R5/R6: the rootfs must be listed in the signed SHA256SUMS bundled next to it
 	if err := release.VerifyFile(rootfs); err != nil {
 		die(1, "امضای نسخه معتبر نیست؛ نصب متوقف شد. فایل را فقط از منبع رسمی دریافت کنید.\n(%v)", err)
@@ -107,13 +123,14 @@ func install(rootfs string) {
 		}
 		// resume after reboot
 		exe, _ := os.Executable()
-		exec.Command("reg", "add", `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce`, "/v", "csnode", "/d", `"`+exe+`" install --rootfs "`+rootfs+`"`, "/f").Run()
+		exec.Command("reg", "add", `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce`, "/v", "csnode", "/d", `"`+exe+`" install --rootfs "`+rootfs+`" --wsl-dir "`+dir+`"`, "/f").Run()
 		fmt.Println("WSL installed; reboot Windows, then run the installer again to finish.")
 		os.Exit(exitRebootNeeded) // the installer wizard shows its restart page on this code
 	}
 	if !distroInstalled() {
-		dir := filepath.Join(os.Getenv("ProgramData"), "csnode", "wsl")
-		os.MkdirAll(dir, 0o755)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			die(1, "cannot create %s: %v", dir, err)
+		}
 		if err := wsl("--import", distro, dir, rootfs, "--version", "2").Run(); err != nil {
 			die(1, "import %s: %v", distro, err)
 		}
@@ -142,11 +159,16 @@ func main() {
 	if len(a) > 0 {
 		switch a[0] {
 		case "install":
-			rootfs := "csnode-linux-rootfs.tar.gz"
-			if len(a) > 2 && a[1] == "--rootfs" {
-				rootfs = a[2]
+			rootfs, dataDir := "csnode-linux-rootfs.tar.gz", ""
+			for i := 1; i+1 < len(a); i += 2 {
+				switch a[i] {
+				case "--rootfs":
+					rootfs = a[i+1]
+				case "--wsl-dir":
+					dataDir = a[i+1]
+				}
 			}
-			install(rootfs)
+			install(rootfs, dataDir)
 			return
 		case "version", "--version":
 			fmt.Println("csnode", version, "(windows)")

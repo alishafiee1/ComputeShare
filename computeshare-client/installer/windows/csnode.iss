@@ -69,6 +69,12 @@ en.NodeName=Node name (letters, digits, dash; 3-32 characters, starts with a let
 en.BadServer=Server address must start with https:// and contain only letters, digits and . : / - _
 en.BadToken=Join token is empty or has unusual characters.
 en.BadName=Node name must be 3-32 characters: letters, digits or dash, starting with a letter.
+en.WdTitle=Where to keep the Linux system
+en.WdSub=The Linux system and the node's disk are big files. Pick a drive with free space.
+en.WdIntro=The installer chose the drive with the most free space. You can change the folder. Use a local drive (not a USB stick or network drive), at least 15 GB free.
+en.BadDrive=Pick a folder on a local fixed drive (not USB, not a network path), for example D:\ComputeShare.
+en.BadDirChars=The folder path must not contain quotes or the characters % & | < > ^
+en.LowSpace=This drive has less than 15 GB free. Pick another drive.
 en.SpTitle=Guest space
 en.SpSub=The space is where people you trust will log in.
 en.SpIntro=Choose the space user. Give a password (12+ characters), or only a public key, or both.
@@ -111,6 +117,12 @@ fa.NodeName=نام نود (حرف، رقم، خط تیره؛ ۳ تا ۳۲ نوی
 fa.BadServer=آدرس سرور باید با https:// شروع شود و فقط حرف، رقم و . : / - _ داشته باشد.
 fa.BadToken=توکن خالی است یا نویسهٔ عجیب دارد.
 fa.BadName=نام نود باید ۳ تا ۳۲ نویسه باشد: حرف، رقم یا خط تیره، و با حرف شروع شود.
+fa.WdTitle=جای نگهداری سیستم لینوکسی
+fa.WdSub=سیستم لینوکسی و دیسک نود فایل‌های بزرگی هستند. درایوی را انتخاب کن که جای خالی دارد.
+fa.WdIntro=نصاب درایوی را که بیشترین جای خالی دارد پیشنهاد داده. می‌توانی پوشه را عوض کنی. درایو داخلی انتخاب کن (نه فلش و نه شبکه) با دست‌کم ۱۵ گیگ جای خالی.
+fa.BadDrive=پوشه‌ای روی یک درایو داخلی انتخاب کن (نه فلش، نه مسیر شبکه)، مثلاً D:\ComputeShare.
+fa.BadDirChars=مسیر پوشه نباید گیومه یا نویسه‌های % & | < > ^ داشته باشد.
+fa.LowSpace=این درایو کمتر از ۱۵ گیگ جای خالی دارد. درایو دیگری انتخاب کن.
 fa.SpTitle=فضای مهمان
 fa.SpSub=فضا جاییه که آدم‌های مورد اعتمادت وارد می‌شوند.
 fa.SpIntro=نام کاربر فضا را انتخاب کن. رمز (حداقل ۱۲ نویسه) یا فقط کلید عمومی یا هر دو بده.
@@ -145,8 +157,11 @@ const
   Letters = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
   Digits = '0123456789';
 
+function GetDriveTypeW(lpRootPathName: String): Cardinal; external 'GetDriveTypeW@kernel32.dll stdcall';
+
 var
   ReqPage: TWizardPage;
+  WdPage: TInputDirWizardPage;
   AccPage, SpacePage: TInputQueryWizardPage;
   LblWin, LblVirt, LblWsl: TNewStaticText;
   WarnImg, RestartImg: TBitmapImage;
@@ -210,6 +225,42 @@ begin
   Result := Pos('ssh-', S) = 1;
   for i := 1 to Length(S) do
     if Pos(S[i], '"%&|<>^' + #13 + #10) > 0 then Result := False;
+end;
+
+function BestDataDir(): String;
+var
+  c: Integer;
+  Root: String;
+  Free, Total, Best: Int64;
+begin
+  { the local fixed drive with the most free space; the system drive is the fallback }
+  Result := ExpandConstant('{commonappdata}\csnode\wsl');
+  Best := 0;
+  for c := Ord('C') to Ord('Z') do
+  begin
+    Root := Chr(c) + ':\';
+    if (GetDriveTypeW(Root) = 3) and GetSpaceOnDisk64(Root, Free, Total) and (Free > Best) then
+    begin
+      Best := Free;
+      Result := Root + 'ComputeShare';
+    end;
+  end;
+end;
+
+function DataDirProblem(Dir: String): String;
+var
+  Root: String;
+  Free, Total: Int64;
+  i: Integer;
+begin
+  Result := '';
+  Dir := Trim(Dir);
+  for i := 1 to Length(Dir) do
+    if Pos(Dir[i], '"%&|<>^') > 0 then begin Result := CustomMessage('BadDirChars'); Exit; end;
+  if (Length(Dir) < 3) or (Dir[2] <> ':') or (Dir[3] <> '\') then begin Result := CustomMessage('BadDrive'); Exit; end;
+  Root := Copy(Dir, 1, 3);
+  if GetDriveTypeW(Root) <> 3 then begin Result := CustomMessage('BadDrive'); Exit; end;
+  if GetSpaceOnDisk64(Root, Free, Total) and (Free < Int64(15) * 1024 * 1024 * 1024) then Result := CustomMessage('LowSpace');
 end;
 
 function MakeLabel(Page: TWizardPage; Top: Integer): TNewStaticText;
@@ -281,7 +332,12 @@ begin
   WarnImg.Visible := False;
 
   { page 4: account of the node }
-  AccPage := CreateInputQueryPage(wpSelectDir, CustomMessage('AccTitle'), CustomMessage('AccSub'), CustomMessage('AccIntro'));
+  { page 3b: where the Linux system file lives (the installer asks the drive and the folder) }
+  WdPage := CreateInputDirPage(wpSelectDir, CustomMessage('WdTitle'), CustomMessage('WdSub'), CustomMessage('WdIntro'), False, 'ComputeShare');
+  WdPage.Add('');
+  WdPage.Values[0] := BestDataDir();
+
+  AccPage := CreateInputQueryPage(WdPage.ID, CustomMessage('AccTitle'), CustomMessage('AccSub'), CustomMessage('AccIntro'));
   AccPage.Add(CustomMessage('Server'), False);
   AccPage.Add(CustomMessage('Token'), True);
   AccPage.Add(CustomMessage('NodeName'), False);
@@ -334,6 +390,10 @@ begin
   begin
     if not (WinOk and VirtOk) then Result := Reject(CustomMessage('ReqFail'));
   end
+  else if CurPageID = WdPage.ID then
+  begin
+    if DataDirProblem(WdPage.Values[0]) <> '' then Result := Reject(DataDirProblem(WdPage.Values[0]));
+  end
   else if CurPageID = AccPage.ID then
   begin
     if not ValidServer(Trim(AccPage.Values[0])) then Result := Reject(CustomMessage('BadServer'))
@@ -378,7 +438,7 @@ begin
   PwFile := ExpandConstant('{tmp}\cspw.txt');
 
   WizardForm.StatusLabel.Caption := CustomMessage('StInstall');
-  rc := RunCmd(Exe + ' install --rootfs "' + App + '\csnode-linux-rootfs.tar.gz"', InstLog);
+  rc := RunCmd(Exe + ' install --rootfs "' + App + '\csnode-linux-rootfs.tar.gz" --wsl-dir "' + Trim(WdPage.Values[0]) + '"', InstLog);
   if rc = ExitReboot then begin RebootNeeded := True; Exit; end;
   if rc <> 0 then begin FailWith(CustomMessage('FailInstall'), InstLog); Exit; end;
 
