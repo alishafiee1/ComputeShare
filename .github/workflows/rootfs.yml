@@ -1,0 +1,49 @@
+# Builds the Linux system file (csnode-linux-rootfs.tar.gz) that the Windows installer imports into WSL2.
+# Run by hand: Actions tab -> "Build WSL rootfs" -> Run workflow. It takes csnode from a signed release,
+# checks the checksum and the signature first, builds with debootstrap, and keeps the result 7 days as an artifact.
+# (For a real release the rootfs must hold the SAME csnode as the release: see computeshare-client/RELEASING.md.)
+name: Build WSL rootfs
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to take csnode from (empty = latest)"
+        required: false
+        default: ""
+permissions:
+  contents: read
+jobs:
+  rootfs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install debootstrap
+        run: sudo apt-get update && sudo apt-get install -y debootstrap debian-archive-keyring
+      - name: Download the release files and verify them
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          if [ -z "$TAG" ]; then TAG="$(gh release view --json tagName --jq .tagName)"; fi
+          gh release download "$TAG" --dir dist --pattern 'csnode-linux-amd64' --pattern 'csnode-authkeys-linux-amd64' --pattern 'cs-linux-amd64' --pattern 'SHA256SUMS' --pattern 'SHA256SUMS.sig'
+          cd dist
+          grep -E ' \*(csnode-linux-amd64|csnode-authkeys-linux-amd64|cs-linux-amd64)$' SHA256SUMS | sed 's/ \*/  /' | sha256sum -c -
+          chmod +x cs-linux-amd64
+          ./cs-linux-amd64 release verify SHA256SUMS
+          echo "csnode taken from release: $TAG" >> "$GITHUB_STEP_SUMMARY"
+      - name: Build the rootfs
+        run: computeshare-client/deploy/mirror/wsl-rootfs/build-from-dist.sh dist "$PWD/csnode-linux-rootfs.tar.gz"
+      - name: Show the result
+        run: |
+          ls -la csnode-linux-rootfs.tar.gz
+          tar -tzf csnode-linux-rootfs.tar.gz | grep -E '^\./(usr/local/bin/csnode|usr/local/bin/csnode-authkeys|etc/wsl.conf|usr/bin/incus)$'
+          sha256sum csnode-linux-rootfs.tar.gz | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: csnode-linux-rootfs
+          path: csnode-linux-rootfs.tar.gz
+          retention-days: 7
+          compression-level: 0
