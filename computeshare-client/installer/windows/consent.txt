@@ -1,0 +1,13 @@
+﻿ComputeShare will create an isolated Linux space (an Incus container inside WSL2) on this computer.
+
+People who receive the space user's password or key from you can log in to that space over the network and use the CPU, memory and GPU you allow. They can NOT reach your files, your home network or this Windows host. You can stop it at any time with "csnode stop", and remove everything with the uninstaller.
+
+The installer will: enable WSL2 (a restart may be needed), import a small Linux system, create the space, and connect this node to the ComputeShare server you enter. CPU, memory and disk limits are set to safe suggested values; change them later in the app.
+
+---
+
+ComputeShare روی این کامپیوتر یک فضای لینوکسی جدا (کانتینر Incus داخل WSL2) می‌سازد.
+
+کسانی که رمز یا کلید کاربر فضا را از شما بگیرند، از راه شبکه وارد همان فضا می‌شوند و از پردازنده، رم و کارت گرافیکی که اجازه داده‌اید استفاده می‌کنند. به فایل‌های شما، شبکهٔ خانه یا خود ویندوز دسترسی ندارند. هر وقت بخواهید با دستور csnode stop متوقفش می‌کنید و با حذف‌کنندهٔ برنامه همه‌چیز پاک می‌شود.
+
+نصاب این کارها را می‌کند: WSL2 را روشن می‌کند (ممکن است ری‌استارت لازم شود)، یک لینوکس کوچک می‌آورد، فضا را می‌سازد و این نود را به سرور ComputeShare که وارد می‌کنید وصل می‌کند. سقف پردازنده، رم و دیسک روی مقدارهای امن پیشنهادی می‌ماند و بعداً داخل برنامه عوض می‌شود.

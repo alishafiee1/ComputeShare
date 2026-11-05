@@ -29,7 +29,7 @@ GitHub خودش فایل‌ها و `SHA256SUMS` را می‌سازد و یک ا�
 هر نسخه: `SHA256SUMS` را دانلود کنید، `cs release sign SHA256SUMS` بزنید، فایل `SHA256SUMS.sig` را به انتشار پیش‌نویس اضافه و منتشر کنید.
 
 یک بار، قبل از اولین نسخهٔ امضاشده: `cs release keygen` بزنید، `release.key` را فقط روی لپ‌تاپ و یک فلش آفلاین نگه دارید، و `release.pub` را در `internal/release/release.pub` بگذارید و **قبل از تگ زدن** commit کنید.
-نصاب Windows را **بعد از امضا** بسازید تا `SHA256SUMS` و `SHA256SUMS.sig` کنار rootfs باشند. فهرست imageهای میرور (`images.lock`، کارت 014) را هم همین‌طور امضا کنید.
+نصاب Windows را **بعد از امضا** بسازید تا `SHA256SUMS` و `SHA256SUMS.sig` کنار rootfs باشند. این کار را `scripts/release.sh X.Y.Z --rootfs فایل` خودش می‌کند. چون `csnode` داخل rootfs باید همان `csnode` نسخه باشد، ترتیب این است: اول `release.sh X.Y.Z --no-sign --no-upload --allow-dirty` برای ساخت `dist/`؛ بعد روی یک کامپیوتر لینوکسی جدا (نه روی خود نود) `deploy/mirror/wsl-rootfs/build-from-dist.sh dist rootfs.tar.gz`؛ و بعد انتشار واقعی با `--rootfs rootfs.tar.gz` (اگر Inno Setup نیست، با `winget install JRSoftware.InnoSetup` نصبش کنید). خود نصاب داخل `SHA256SUMS` نیست و ویندوز هشدار SmartScreen می‌دهد. فهرست imageهای میرور (`images.lock`، کارت 014) را هم همین‌طور امضا کنید.
 آزمون کامل نصاب: `e2e/installer_sig.sh`.
 
 ## ۴. میرور و سرور

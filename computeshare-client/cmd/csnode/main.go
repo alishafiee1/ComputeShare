@@ -210,6 +210,7 @@ func cmdSetup(args []string) {
 	gpu := fs.Bool("gpu", false, "pass the GPU into the space")
 	bw := fs.String("bandwidth", "", "bandwidth limit, e.g. 20Mbit (empty = unlimited)")
 	q := fs.String("quota", "", "daily quota, e.g. 20GB/day (empty = unlimited)")
+	safe := fs.Bool("safe-defaults", false, "with --yes: fill empty cpu/memory/disk with the same suggested values the questions offer (instead of no limit)")
 	image := fs.String("image", "images:debian/12", "Incus image")
 	mirror := fs.String("mirror", "auto", "mirror base URL (auto = <server>/mirror if present, off = upstream)")
 	imgFP := fs.String("image-fingerprint", "", "use this exact image fingerprint from the mirror (for images not in the signed images.lock)")
@@ -234,6 +235,9 @@ func cmdSetup(args []string) {
 	}
 	res := setup.Detect()
 	fmt.Print(res.Table())
+	if *yes && *safe {
+		*cpu, *mem, *disk = safeDefault(*cpu, res.SuggestCPU()), safeDefault(*mem, res.SuggestMemory()), safeDefault(*disk, "100GiB")
+	}
 	if !*yes {
 		*cpu = askOptional("CPU cores for the space", res.SuggestCPU())
 		*mem = askOptional("Memory for the space", res.SuggestMemory())
@@ -851,4 +855,12 @@ func cmdLeave(args []string) {
 		incus.Delete(c.Space.Instance)
 		fmt.Println("space deleted")
 	}
+}
+
+// safeDefault: the value the user gave, else the suggested one (used by --safe-defaults).
+func safeDefault(given, suggested string) string {
+	if given != "" {
+		return given
+	}
+	return suggested
 }

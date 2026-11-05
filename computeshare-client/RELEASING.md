@@ -50,7 +50,13 @@ cs release sign dist/SHA256SUMS   # asks for the passphrase, writes dist/SHA256S
 cs release verify dist/SHA256SUMS # self-check with the key built into your cs
 ```
 `scripts/release.sh` does this for you and uploads `SHA256SUMS.sig` to the draft release; you then publish it. (The build also makes `cs-bench-linux-*`, the helper for `cs bench --run`; it is listed in `SHA256SUMS` like the other binaries.) The server binary `csbroker-linux-*` is in the same release and the same `SHA256SUMS`.
-Windows: build `csnode-setup.exe` (Inno Setup, `installer/windows/csnode.iss`) **after** signing, with `SHA256SUMS` and `SHA256SUMS.sig` next to the rootfs; `csnode install` checks the rootfs against them.
+Windows installer (`csnode-setup-X.Y.Z.exe`, Inno Setup, `installer/windows/csnode.iss`): `scripts/release.sh X.Y.Z --rootfs FILE` signs the rootfs with everything else and, after signing, builds the installer with `SHA256SUMS` and `SHA256SUMS.sig` bundled next to it; `csnode install` checks the rootfs against them. The rootfs must contain the same `csnode` as the release, so build it in this order:
+```bash
+scripts/release.sh X.Y.Z --no-sign --no-upload --allow-dirty            # owner's computer: builds dist/
+computeshare-client/deploy/mirror/wsl-rootfs/build-from-dist.sh dist rootfs.tar.gz   # on a separate Linux machine (sudo, debootstrap)
+scripts/release.sh X.Y.Z --rootfs rootfs.tar.gz                         # the real release; installs Inno Setup first if missing: winget install JRSoftware.InnoSetup
+```
+The installer itself is not in the signed `SHA256SUMS` (it contains that file); users take it from the release page and can compare the published `csnode-setup-X.Y.Z.exe.sha256`. It is unsigned for Windows, so SmartScreen warns.
 Mirror image list (card 014): sign `images.lock` the same way (`cs release sign images.lock`) and put both files in `/srv/mirror/images/`.
 
 Check the installer end to end on any Linux box: `e2e/installer_sig.sh` (signed install works; tampered binary, tampered SHA256SUMS, missing signature and a key-less installer all abort).

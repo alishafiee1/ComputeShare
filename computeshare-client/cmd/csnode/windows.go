@@ -20,6 +20,9 @@ import (
 
 const distro = "csnode-linux"
 
+// exitRebootNeeded: `csnode install` exit code meaning "WSL was just installed, restart Windows first".
+const exitRebootNeeded = 10
+
 var version = "dev"
 
 func die(code int, f string, a ...any) { fmt.Fprintf(os.Stderr, f+"\n", a...); os.Exit(code) }
@@ -105,8 +108,8 @@ func install(rootfs string) {
 		// resume after reboot
 		exe, _ := os.Executable()
 		exec.Command("reg", "add", `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce`, "/v", "csnode", "/d", `"`+exe+`" install --rootfs "`+rootfs+`"`, "/f").Run()
-		fmt.Println("WSL installed; reboot Windows, setup will continue automatically.")
-		return
+		fmt.Println("WSL installed; reboot Windows, then run the installer again to finish.")
+		os.Exit(exitRebootNeeded) // the installer wizard shows its restart page on this code
 	}
 	if !distroInstalled() {
 		dir := filepath.Join(os.Getenv("ProgramData"), "csnode", "wsl")
