@@ -165,6 +165,10 @@ func TestKickReasonAndCounters(t *testing.T) {
 	h.Kick(6)
 	io.ReadAll(a)
 	waitEmpty(t, h)
+	// the end-of-session line is written right after the entry is removed: give it a moment
+	for i := 0; i < 100 && !strings.Contains(lb.String(), "reason=kick"); i++ {
+		time.Sleep(10 * time.Millisecond)
+	}
 	if !strings.Contains(lb.String(), "reason=kick") || !strings.Contains(lb.String(), "bytes_up=5") {
 		t.Fatal(lb.String())
 	}
