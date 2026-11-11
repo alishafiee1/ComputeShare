@@ -43,6 +43,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Incus from the upstream Zabbly LTS repo: the Ubuntu 24.04 archive build (6.0.5) generates an AppArmor
+          # profile under which systemd inside the space cannot signal its own children (ssh restart then fails).
+          sudo mkdir -p /etc/apt/keyrings
+          sudo curl -fsSL https://pkgs.zabbly.com/key.asc -o /etc/apt/keyrings/zabbly.asc
+          . /etc/os-release
+          printf 'Enabled: yes\nTypes: deb\nURIs: https://pkgs.zabbly.com/incus/lts-6.0\nSuites: %s\nComponents: main\nArchitectures: %s\nSigned-By: /etc/apt/keyrings/zabbly.asc\n' \
+            "$VERSION_CODENAME" "$(dpkg --print-architecture)" | sudo tee /etc/apt/sources.list.d/zabbly-incus-lts-6.0.sources >/dev/null
           sudo apt-get update -q
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q incus sshpass
           sudo adduser "$USER" incus-admin || true   # the tests use sudo anyway; this only helps manual debugging
