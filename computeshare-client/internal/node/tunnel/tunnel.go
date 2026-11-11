@@ -25,6 +25,20 @@ import (
 // ErrFatal stops reconnecting (banned / unknown node).
 var ErrFatal = errors.New("fatal")
 
+// ErrPending means the node waits for admin approval; it is retried on a short fixed cap so approval takes effect fast.
+var ErrPending = errors.New("node pending approval")
+
+// PendingMaxBack caps the reconnect delay while the node is pending.
+const PendingMaxBack = 10 * time.Second
+
+// retryDelay is the wait before the next attempt: normal exponential backoff, but short while pending.
+func retryDelay(err error, attempt int, min, max time.Duration) time.Duration {
+	if errors.Is(err, ErrPending) && max > PendingMaxBack {
+		max = PendingMaxBack
+	}
+	return Backoff(attempt, min, max)
+}
+
 type Client struct {
 	Server    string
 	NodeID    string
@@ -100,7 +114,7 @@ func (c *Client) Run(ctx context.Context) error {
 		if time.Since(start) > 30*time.Second {
 			attempt = 0
 		}
-		d := Backoff(attempt, c.MinBack, c.MaxBack)
+		d := retryDelay(err, attempt, c.MinBack, c.MaxBack)
 		attempt++
 		c.Log.Warn("tunnel down, reconnecting", "err", fmt.Sprint(err), "in", d.Round(time.Millisecond).String())
 		select {
@@ -137,6 +151,9 @@ func (c *Client) once(ctx context.Context) error {
 			return errors.New("clock skew too large; fix system time")
 		case proto.CodeNodeBanned, "NODE_UNKNOWN":
 			return fmt.Errorf("%w: %s", ErrFatal, w.Code)
+		}
+		if w.Code == proto.CodeNodePending {
+			return fmt.Errorf("%w: %s", ErrPending, w.Message)
 		}
 		return fmt.Errorf("broker refused: %s %s", w.Code, w.Message)
 	}

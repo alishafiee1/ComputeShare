@@ -127,3 +127,14 @@ csnode gives spaces DNS through the bridge's dnsmasq. If the host's own resolver
 sudo CSNODE_DNS="9.9.9.9,1.1.1.1" csnode setup
 ```
 It is safe to rerun, and a `raw.dnsmasq` you wrote yourself is never overwritten. The space's firewall is unchanged: dnsmasq asks upstream from the host, so no LAN access is opened.
+
+## Troubleshooting (Windows / WSL)
+
+- **Node never comes online after install.** Inside the distro run `wsl -d csnode-linux -u root -- systemctl status csnode`. The installer now runs `csnode service install` itself after setup (and fails if the service is not active); on an older install run `wsl -d csnode-linux -u root -- csnode service install` once.
+- **Node stays "offline" while waiting for approval.** A pending node retries every 10 s at most, so it comes online within seconds of the admin clicking Approve.
+- **Large downloads stall inside WSL.** With WSL `networkingMode=mirrored` plus a VPN/TUN adapter whose MTU is 9000, big downloads can hang. Lower the MTU in the distro (not persistent, redo after `wsl --shutdown`):
+  ```
+  wsl -d csnode-linux -u root -- ip link set eth0 mtu 1400
+  ```
+  or switch `.wslconfig` back to `networkingMode=NAT`.
+- **No internet / DNS inside the space.** csnode picks real upstream DNS (1.1.1.1, 8.8.8.8, 9.9.9.9). To choose your own: `wsl -d csnode-linux -u root -- env CSNODE_DNS=9.9.9.9,1.1.1.1 csnode setup`.

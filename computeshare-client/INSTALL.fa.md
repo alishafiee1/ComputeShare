@@ -82,3 +82,14 @@ sudo csnode users add ali --key-file ali.pub      # یا بدون --key-file ت�
 sudo csnode users ls
 ```
 هر کاربر بار اول که وصل شود (`ssh ali@myBrotherPc.cs`) کانتینر خودش را می‌گیرد و فایل‌هایش بین دفعه‌ها می‌ماند. فضای بیکار بعد از ۳۰ دقیقه خاموش می‌شود (`idle_stop`) و حداکثر ۳ فضا هم‌زمان روشن‌اند (`max_running_spaces`). با روشن کردن این حالت host key عوض می‌شود؛ خط تازهٔ `cs add` را از `csnode status` برای کاربرها بفرستید.
+
+## رفع اشکال (ویندوز و WSL)
+
+- **نود بعد از نصب آنلاین نمی‌شود.** داخل توزیع این را بزنید: `wsl -d csnode-linux -u root -- systemctl status csnode`. نصاب حالا بعد از setup خودش `csnode service install` را اجرا می‌کند و اگر سرویس بالا نیامد خطا می‌دهد. روی نصب قدیمی یک بار `wsl -d csnode-linux -u root -- csnode service install` را بزنید.
+- **نود تا تأیید ادمین آفلاین می‌ماند.** نود در حالت «در انتظار تأیید» حداکثر هر ۱۰ ثانیه دوباره تلاش می‌کند، پس چند ثانیه بعد از تأیید آنلاین می‌شود.
+- **دانلود حجیم داخل WSL گیر می‌کند.** اگر `networkingMode=mirrored` و یک VPN/TUN با MTU برابر 9000 دارید، دانلودهای بزرگ می‌ایستند. MTU را داخل توزیع پایین بیاورید (بعد از `wsl --shutdown` پاک می‌شود و باید دوباره زده شود):
+  ```
+  wsl -d csnode-linux -u root -- ip link set eth0 mtu 1400
+  ```
+  یا در `.wslconfig` به حالت `networkingMode=NAT` برگردید.
+- **داخل فضا اینترنت یا DNS نیست.** csnode خودش DNS بیرونی (1.1.1.1 و 8.8.8.8 و 9.9.9.9) می‌گذارد. برای انتخاب خودتان: `wsl -d csnode-linux -u root -- env CSNODE_DNS=9.9.9.9,1.1.1.1 csnode setup`.

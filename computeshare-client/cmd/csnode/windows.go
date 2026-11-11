@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/alishafiee1/computeshare-client/internal/release"
 	"golang.org/x/sys/windows"
@@ -234,4 +235,30 @@ func main() {
 		}
 		die(1, "%v", err)
 	}
+	// the systemd unit inside the distro does not exist until someone installs it: do it right after a
+	// successful setup (idempotent), and fail loudly if the service does not come up
+	if len(a) > 0 && a[0] == "setup" {
+		if err := ensureService(); err != nil {
+			die(1, "setup finished but the csnode service is not running inside %s: %v", distro, err)
+		}
+	}
+}
+
+// ensureService installs + enables + starts the systemd unit inside the distro and checks it is active.
+// Safe to run again: "service install" rewrites the unit and "enable --now" on a running unit is a no-op.
+func ensureService() error {
+	if out, err := wsl("-d", distro, "-u", "root", "--", "csnode", "service", "install").CombinedOutput(); err != nil {
+		return fmt.Errorf("csnode service install: %v: %s", err, strings.TrimSpace(string(out)))
+	}
+	var last string
+	for i := 0; i < 15; i++ {
+		out, _ := wsl("-d", distro, "-u", "root", "--", "systemctl", "is-active", "csnode").Output()
+		last = strings.TrimSpace(string(out))
+		if last == "active" {
+			fmt.Println("csnode service is running inside", distro)
+			return nil
+		}
+		time.Sleep(time.Second)
+	}
+	return fmt.Errorf("systemctl is-active csnode says %q", last)
 }
