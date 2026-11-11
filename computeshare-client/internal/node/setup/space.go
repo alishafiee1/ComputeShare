@@ -67,12 +67,42 @@ func EnsureIncus(mirror string, out func(string)) error {
 			return fmt.Errorf("incus install failed: %v", err)
 		}
 	}
-	if out2, _ := incus.Run(nil, "storage", "list", "--format", "csv"); strings.TrimSpace(out2) == "" {
-		if _, err := incus.Run(nil, "admin", "init", "--minimal"); err != nil {
+	if err := initIncus(out); err != nil {
+		return err
+	}
+	EnsureLXCFS(out) // card 016 R1: the space shows its own limits in free / nproc
+	return nil
+}
+
+// initIncus replaces `incus admin init --minimal`: its automatic subnet search fails on hosts with
+// many networks/VPNs and on WSL2 mirrored networking. Each step checks first, so a rerun after a
+// partial failure just continues.
+func initIncus(out func(string)) error {
+	if o, _ := incus.Run(nil, "storage", "list", "--format", "csv"); strings.TrimSpace(o) == "" {
+		if _, err := incus.Run(nil, "storage", "create", "default", "dir"); err != nil {
 			return err
 		}
 	}
-	EnsureLXCFS(out) // card 016 R1: the space shows its own limits in free / nproc
+	if _, err := incus.Run(nil, "network", "show", "incusbr0"); err != nil {
+		sub := PickSubnet(usedNets())
+		if sub == "" {
+			return fmt.Errorf("no free private IPv4 subnet for incusbr0")
+		}
+		out("creating network incusbr0 on " + sub)
+		if _, err := incus.Run(nil, "network", "create", "incusbr0", "ipv4.address="+sub, "ipv4.nat=true", "ipv6.address=none"); err != nil {
+			return err
+		}
+	}
+	if o, _ := incus.Run(nil, "profile", "device", "list", "default"); !strings.Contains(o, "root") {
+		if _, err := incus.Run(nil, "profile", "device", "add", "default", "root", "disk", "path=/", "pool=default"); err != nil {
+			return err
+		}
+	}
+	if o, _ := incus.Run(nil, "profile", "device", "list", "default"); !strings.Contains(o, "eth0") {
+		if _, err := incus.Run(nil, "profile", "device", "add", "default", "eth0", "nic", "network=incusbr0", "name=eth0"); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -101,6 +131,9 @@ func hostAddrs() []string {
 		if ipn, ok := a.(*net.IPNet); ok && ipn.IP.To4() != nil && !ipn.IP.IsLoopback() {
 			out = append(out, ipn.IP.String()+"/32")
 		}
+	}
+	for _, n := range routeNets(readFile("/proc/net/route")) { // every network the host can reach, not only RFC1918
+		out = append(out, n.String())
 	}
 	return append(out, gateways(readFile("/proc/net/route"))...)
 }
@@ -154,7 +187,11 @@ func ACLRules(gw string, quotaReached bool) (egress, ingress [][]string) {
 // EnsureNetwork creates csbr0 + csacl (R5). Idempotent.
 func EnsureNetwork() (string, error) {
 	if _, err := incus.Run(nil, "network", "show", Bridge); err != nil {
-		if _, err := incus.Run(nil, "network", "create", Bridge, "ipv4.address="+DefaultGateway+"/24", "ipv4.nat=true", "ipv6.address=none"); err != nil {
+		sub := PickSubnet(usedNets(), DefaultGateway+"/24")
+		if sub == "" {
+			return "", fmt.Errorf("no free private IPv4 subnet for %s", Bridge)
+		}
+		if _, err := incus.Run(nil, "network", "create", Bridge, "ipv4.address="+sub, "ipv4.nat=true", "ipv6.address=none"); err != nil {
 			return "", err
 		}
 	}
