@@ -213,6 +213,9 @@ func EnsureNetwork() (string, error) {
 			gw = ip
 		}
 	}
+	if err := EnsureDNS(gw, func(m string) { fmt.Println(m) }); err != nil {
+		return "", err
+	}
 	if err := ApplyACL(gw, false); err != nil {
 		return "", err
 	}

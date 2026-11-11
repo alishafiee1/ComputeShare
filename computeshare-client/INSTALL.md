@@ -118,3 +118,12 @@ sudo csnode users add ali --key-file ali.pub      # or without --key-file to set
 sudo csnode users ls
 ```
 Each user gets their own container on first login (`ssh ali@myBrotherPc.cs`), with their files kept between logins. Idle spaces stop after 30 minutes (`idle_stop` in config) and at most 3 run at once (`max_running_spaces`). The host key changes when you turn this on, so send users the new `cs add` line from `csnode status`.
+
+### DNS inside the space
+
+csnode gives spaces DNS through the bridge's dnsmasq. If the host's own resolver cannot be used by dnsmasq (WSL2's `10.255.255.254`, a `127.x` stub), csnode sets `raw.dnsmasq` on `csbr0` with real upstreams: first the ones from `/run/systemd/resolve/resolv.conf`, otherwise `1.1.1.1`, `8.8.8.8`, `9.9.9.9`. To choose your own, run setup with the variable set:
+
+```bash
+sudo CSNODE_DNS="9.9.9.9,1.1.1.1" csnode setup
+```
+It is safe to rerun, and a `raw.dnsmasq` you wrote yourself is never overwritten. The space's firewall is unchanged: dnsmasq asks upstream from the host, so no LAN access is opened.
