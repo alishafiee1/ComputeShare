@@ -67,7 +67,7 @@ jobs:
         run: |
           set -uo pipefail
           # the script prints PASS/FAIL/SKIP lines; any FAIL (or a non-zero exit) fails the job
-          bash computeshare-client/e2e/system_e2e.sh 2>&1 | tee "$RUNNER_TEMP/system_e2e.log"
+          KEEP=1 bash computeshare-client/e2e/system_e2e.sh 2>&1 | tee "$RUNNER_TEMP/system_e2e.log"
           rc=${PIPESTATUS[0]}
           if grep -q '^FAIL' "$RUNNER_TEMP/system_e2e.log"; then
             echo "::error::system_e2e has FAIL lines"; grep '^FAIL' "$RUNNER_TEMP/system_e2e.log"; exit 1
@@ -80,9 +80,14 @@ jobs:
         shell: bash
         run: |
           W=/tmp/cs-sys-e2e
-          for f in setup.log broker.log node.log; do echo "=== $f"; tail -n 40 "$W/$f" 2>/dev/null || true; done
+          for f in setup.log broker.log node.log; do echo "=== $f"; sudo tail -n 40 "$W/$f" 2>/dev/null || true; done
           sudo iptables -S FORWARD | head -10 || true
           sudo incus list 2>/dev/null || true
+          echo "=== ssh inside the space"
+          sudo incus exec cs-e2eNode -- systemctl status ssh --no-pager -l 2>&1 | tail -n 30 || true
+          sudo incus exec cs-e2eNode -- journalctl -u ssh -n 40 --no-pager 2>&1 || true
+          sudo incus exec cs-e2eNode -- sh -c 'sshd -T >/dev/null && echo sshd-T-ok; ls -la /run/sshd; cat /etc/ssh/sshd_config.d/*.conf' 2>&1 || true
+          sudo dmesg 2>/dev/null | grep -iE 'apparmor="DENIED"' | tail -n 15 || true
 
       - name: join rodi broker (optional)
         shell: bash
