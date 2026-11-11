@@ -13,7 +13,11 @@ AppVersion={#Ver}
 AppPublisher=ComputeShare
 DefaultDirName={autopf}\ComputeShare
 DisableProgramGroupPage=yes
+; admin by default (it can turn WSL on). If WSL is already installed, "just for me" works without admin:
+; pick it in the start dialog, or pass /CURRENTUSER on the command line.
 PrivilegesRequired=admin
+PrivilegesRequiredOverridesAllowed=dialog commandline
+UsedUserAreasWarning=no
 OutputBaseFilename=csnode-setup-{#Ver}
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0.19044
@@ -45,7 +49,8 @@ Source: "assets\warning.bmp"; Flags: dontcopy
 Source: "assets\restart.bmp"; Flags: dontcopy
 
 [Registry]
-Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"; ValueType: expandsz; ValueName: "Path"; ValueData: "{olddata};{app}"; Check: NeedsAddPath
+Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"; ValueType: expandsz; ValueName: "Path"; ValueData: "{olddata};{app}"; Check: NeedsAddPathAdmin
+Root: HKCU; Subkey: "Environment"; ValueType: expandsz; ValueName: "Path"; ValueData: "{olddata};{app}"; Check: NeedsAddPathUser
 
 [UninstallRun]
 Filename: "{app}\csnode.exe"; Parameters: "uninstall"; Flags: waituntilterminated; RunOnceId: "csnodepurge"
@@ -97,6 +102,14 @@ en.FailServer=The server could not be reached. Check the address and your intern
 en.FinOk=ComputeShare is ready. Others can now connect to your node.
 en.FinRestart=Windows must restart to finish enabling WSL2. After the restart, run this installer again to finish.
 en.FinFail=The installation did not finish. See the message shown earlier and the log file.
+en.FinFailHead=Installation FAILED
+en.FinFailWhy=ComputeShare was NOT installed correctly. The node is not working.
+en.FinFailReason=Reason:
+en.FinFailLog=Log file:
+en.NeedAdminWsl=WSL is not installed on this computer, and turning it on needs administrator rights. Run this installer again and choose "all users" (or right-click, Run as administrator).
+en.SilentBad=Silent install: invalid or missing parameter:
+en.SilentNoAccept=Silent install: you must pass /ACCEPT to confirm that you accepted the terms (consent.txt).
+en.NoSecretFile=Cannot read the file given for the secret value:
 en.FinLimits=CPU, memory and disk limits use safe suggested values. Change them later in the app.
 #if HaveFa
 fa.ReqTitle=بررسی سیستم
@@ -145,6 +158,14 @@ fa.FailServer=به سرور وصل نشد. آدرس و اینترنت را چک 
 fa.FinOk=ComputeShare آماده است. حالا بقیه می‌توانند به نودت وصل شوند.
 fa.FinRestart=ویندوز باید ری‌استارت شود تا WSL2 کامل روشن شود. بعد از ری‌استارت همین نصاب را دوباره اجرا کن.
 fa.FinFail=نصب کامل نشد. پیام قبلی و فایل گزارش را ببین.
+fa.FinFailHead=نصب ناموفق بود
+fa.FinFailWhy=ComputeShare درست نصب نشد و نود کار نمی‌کند.
+fa.FinFailReason=دلیل:
+fa.FinFailLog=فایل گزارش:
+fa.NeedAdminWsl=WSL روی این کامپیوتر نصب نیست و روشن کردنش دسترسی ادمین می‌خواهد. نصاب را دوباره اجرا کن و «همهٔ کاربران» را انتخاب کن (یا راست‌کلیک و Run as administrator).
+fa.SilentBad=نصب بی‌صدا: پارامتر نامعتبر یا جاافتاده:
+fa.SilentNoAccept=نصب بی‌صدا: باید /ACCEPT بدهی تا قبول شرایط (consent.txt) تأیید شود.
+fa.NoSecretFile=فایلِ مقدار محرمانه خوانده نشد:
 fa.FinLimits=سقف پردازنده، رم و دیسک روی مقدارهای امن پیشنهادی است. بعداً داخل برنامه عوضش کن.
 #endif
 
@@ -158,6 +179,19 @@ const
   Digits = '0123456789';
 
 function GetDriveTypeW(lpRootPathName: String): Cardinal; external 'GetDriveTypeW@kernel32.dll stdcall';
+procedure ExitProcess(uExitCode: Cardinal); external 'ExitProcess@kernel32.dll stdcall';
+
+const
+  { exit codes of a silent install (/VERYSILENT); 0 = success. Documented in INSTALL.md }
+  CodeBadParam = 20;       { a command-line parameter is missing or invalid }
+  CodeNoAccept = 21;       { /ACCEPT was not given }
+  CodeSystem = 22;         { Windows too old, or virtualization is off }
+  CodeNeedAdmin = 23;      { WSL is not installed and this run has no administrator rights }
+  CodeInstallLinux = 30;   { WSL / Linux system install failed }
+  CodeSetup = 31;          { node setup failed }
+  CodeNameTaken = 32;      { node name already used on the server }
+  CodeUnreachable = 33;    { server not reachable }
+  CodeReboot = 3010;       { WSL was just installed: restart Windows, then run the same command again }
 
 var
   ReqPage: TWizardPage;
@@ -165,14 +199,63 @@ var
   AccPage, SpacePage: TInputQueryWizardPage;
   LblWin, LblVirt, LblWsl: TNewStaticText;
   WarnImg, RestartImg: TBitmapImage;
-  WinOk, VirtOk, RebootNeeded, InstallFailed: Boolean;
+  WinOk, VirtOk, AdminOk, RebootNeeded, InstallFailed: Boolean;
   StatusText: String;
+  FailReason, FailLog, LogDir: String;
+  { the values of the questions: from the wizard pages, or from the command line when silent }
+  VServer, VToken, VName, VDir, VUser, VPass, VKey, VCpu, VMem, VDisk: String;
 
-function NeedsAddPath(): Boolean;
+{ ---- command-line parameters (/SERVER=... style; see INSTALL.md) ---- }
+function HasSwitch(Name: String): Boolean;
+var i: Integer; a: String;
+begin
+  Result := False;
+  for i := 1 to ParamCount do
+  begin
+    a := Uppercase(ParamStr(i));
+    if (a = '/' + Name) or (Pos('/' + Name + '=', a) = 1) then Result := True;
+  end;
+end;
+
+function Param(Name: String): String;
+begin
+  Result := Trim(ExpandConstant('{param:' + Name + '|}'));
+end;
+
+{ value of /NAME=... or, if absent, the first line of the file given in /NAMEFILE=... (keeps secrets off the command line) }
+function SecretParam(Name: String; var Err: String): String;
+var f: String; Raw: AnsiString; p: Integer;
+begin
+  Result := Param(Name);
+  f := Param(Name + 'FILE');
+  if (Result = '') and (f <> '') then
+  begin
+    if LoadStringFromFile(f, Raw) then
+    begin
+      Result := String(Raw);
+      p := Pos(#10, Result);
+      if p > 0 then Result := Copy(Result, 1, p - 1);
+      p := Pos(#13, Result);
+      if p > 0 then Result := Copy(Result, 1, p - 1);
+    end else Err := CustomMessage('NoSecretFile') + ' /' + Name + 'FILE';
+  end;
+end;
+
+function NeedsAddPathIn(Root: Integer; Sub: String): Boolean;
 var p: string;
 begin
-  if not RegQueryStringValue(HKLM, 'SYSTEM\CurrentControlSet\Control\Session Manager\Environment', 'Path', p) then begin Result := True; exit; end;
+  if not RegQueryStringValue(Root, Sub, 'Path', p) then begin Result := True; exit; end;
   Result := Pos(';' + ExpandConstant('{app}') + ';', ';' + p + ';') = 0;
+end;
+
+function NeedsAddPathAdmin(): Boolean;
+begin
+  Result := IsAdminInstallMode and NeedsAddPathIn(HKLM, 'SYSTEM\CurrentControlSet\Control\Session Manager\Environment');
+end;
+
+function NeedsAddPathUser(): Boolean;
+begin
+  Result := (not IsAdminInstallMode) and NeedsAddPathIn(HKCU, 'Environment');
 end;
 
 function Sys64(): String;
@@ -288,27 +371,109 @@ begin
   end;
 end;
 
-procedure RunChecks();
-var
-  V: TWindowsVersion;
-  rc: Integer;
-  WslThere: Boolean;
+function CheckWin(): Boolean;
+var V: TWindowsVersion;
 begin
   GetWindowsVersionEx(V);
-  WinOk := V.Build >= 19044;
-  SetStatus(LblWin, WinOk, CustomMessage('WinOk'), CustomMessage('WinBad'));
+  Result := V.Build >= 19044;
+end;
 
-  VirtOk := Exec(Sys64() + '\WindowsPowerShell\v1.0\powershell.exe',
+function CheckVirt(): Boolean;
+var rc: Integer;
+begin
+  Result := Exec(Sys64() + '\WindowsPowerShell\v1.0\powershell.exe',
     '-NoProfile -Command "if(((Get-CimInstance Win32_Processor).VirtualizationFirmwareEnabled -contains $true) -or (Get-CimInstance Win32_ComputerSystem).HypervisorPresent){exit 0}else{exit 1}"',
     '', SW_HIDE, ewWaitUntilTerminated, rc) and (rc = 0);
+end;
+
+function CheckWsl(): Boolean;
+var rc: Integer;
+begin
+  Result := Exec(Sys64() + '\wsl.exe', '--status', '', SW_HIDE, ewWaitUntilTerminated, rc) and (rc = 0);
+end;
+
+procedure RunChecks();
+var WslThere: Boolean;
+begin
+  WinOk := CheckWin();
+  SetStatus(LblWin, WinOk, CustomMessage('WinOk'), CustomMessage('WinBad'));
+
+  VirtOk := CheckVirt();
   SetStatus(LblVirt, VirtOk, CustomMessage('VirtOk'), CustomMessage('VirtBad'));
 
-  WslThere := Exec(Sys64() + '\wsl.exe', '--status', '', SW_HIDE, ewWaitUntilTerminated, rc) and (rc = 0);
-  SetStatus(LblWsl, True, '', '');
-  if WslThere then LblWsl.Caption := '[OK]  ' + CustomMessage('WslOk')
-  else LblWsl.Caption := '[i]  ' + CustomMessage('WslNew');
+  WslThere := CheckWsl();
+  { turning WSL on needs administrator rights; if WSL is already there, a per-user install is enough }
+  AdminOk := WslThere or IsAdminInstallMode;
+  if WslThere then SetStatus(LblWsl, True, CustomMessage('WslOk'), '')
+  else if AdminOk then begin SetStatus(LblWsl, True, '', ''); LblWsl.Caption := '[i]  ' + CustomMessage('WslNew'); end
+  else SetStatus(LblWsl, False, '', CustomMessage('NeedAdminWsl'));
 
-  WarnImg.Visible := not (WinOk and VirtOk);
+  WarnImg.Visible := not (WinOk and VirtOk and AdminOk);
+end;
+
+{ one place for every failure: log + reason; silent = exit with a non-zero code, wizard = red finish page }
+procedure Fatal(Code: Integer; Msg, LogFile: String);
+begin
+  FailReason := Msg;
+  FailLog := LogFile;
+  Log('FAILED (' + IntToStr(Code) + '): ' + Msg + ' ' + LogFile);
+  SaveStringToFile(LogDir + '\install-result.log', 'FAILED code=' + IntToStr(Code) + #13#10 + Msg + #13#10 + LogFile + #13#10, False);
+  if WizardSilent then ExitProcess(Code);
+  InstallFailed := True;
+  MsgBox(Msg + #13#10 + LogFile, mbError, MB_OK);
+end;
+
+function ValidLimit(S: String): Boolean;
+begin
+  Result := (S = '') or (AllChars(S, Digits + '.GiBMKTgibmkt') and (Pos(S[1], Digits) > 0));
+end;
+
+{ silent install: read every answer from the command line, validate it, check the system; exit non-zero with a log on any problem }
+procedure BadParam(What: String);
+begin
+  Fatal(CodeBadParam, CustomMessage('SilentBad') + ' ' + What, '');
+end;
+
+procedure SilentChecks();
+var Err: String;
+begin
+  if not HasSwitch('ACCEPT') then begin Fatal(CodeNoAccept, CustomMessage('SilentNoAccept'), ''); Exit; end;
+  Err := '';
+  VServer := Param('SERVER'); if VServer = '' then VServer := 'https://node.n3xus.ir';
+  VToken := SecretParam('TOKEN', Err);
+  VName := Param('NODENAME');
+  VDir := Param('WSLDIR'); if VDir = '' then VDir := BestDataDir();
+  VUser := Param('SPACEUSER'); if VUser = '' then VUser := 'user';
+  VPass := SecretParam('SPACEPASS', Err);
+  VKey := Param('SPACEKEY');
+  if Err <> '' then begin Fatal(CodeBadParam, Err, ''); Exit; end;
+  if not ValidServer(VServer) then BadParam('/SERVER')
+  else if not ValidToken(VToken) then BadParam('/TOKEN or /TOKENFILE')
+  else if not ValidName(VName) then BadParam('/NODENAME')
+  else if DataDirProblem(VDir) <> '' then BadParam('/WSLDIR - ' + DataDirProblem(VDir))
+  else if not ValidUser(VUser) then BadParam('/SPACEUSER')
+  else if (VPass <> '') and ((Length(VPass) < 12) or not IsAscii(VPass)) then BadParam('/SPACEPASS (12+ ASCII characters)')
+  else if not ValidKey(VKey) then BadParam('/SPACEKEY')
+  else if (VPass = '') and (VKey = '') then BadParam('/SPACEPASS or /SPACEKEY (one of them is required)')
+  else if not ValidLimit(VCpu) then BadParam('/CPU')
+  else if not ValidLimit(VMem) then BadParam('/MEMORY')
+  else if not ValidLimit(VDisk) then BadParam('/DISK');
+
+  if not CheckWin() then Fatal(CodeSystem, CustomMessage('WinBad'), '')
+  else if not CheckVirt() then Fatal(CodeSystem, CustomMessage('VirtBad'), '')
+  else if (not CheckWsl()) and (not IsAdminInstallMode) then Fatal(CodeNeedAdmin, CustomMessage('NeedAdminWsl'), '');
+end;
+
+function InitializeSetup(): Boolean;
+begin
+  Result := True;
+  LogDir := ExpandConstant('{localappdata}\ComputeShare\logs');
+  ForceDirectories(LogDir);
+  DeleteFile(LogDir + '\install-result.log');
+  VCpu := Param('CPU');   { empty = the suggested safe value }
+  VMem := Param('MEMORY');
+  VDisk := Param('DISK');
+  if WizardSilent then SilentChecks();
 end;
 
 procedure InitializeWizard();
@@ -342,6 +507,10 @@ begin
   AccPage.Add(CustomMessage('Token'), True);
   AccPage.Add(CustomMessage('NodeName'), False);
   AccPage.Values[0] := 'https://node.n3xus.ir';
+  { command-line values prefill the pages (and are the answers when the install is silent) }
+  if Param('SERVER') <> '' then AccPage.Values[0] := Param('SERVER');
+  if Param('NODENAME') <> '' then AccPage.Values[2] := Param('NODENAME');
+  if Param('WSLDIR') <> '' then WdPage.Values[0] := Param('WSLDIR');
 
   { page 5: guest space }
   SpacePage := CreateInputQueryPage(AccPage.ID, CustomMessage('SpTitle'), CustomMessage('SpSub'), CustomMessage('SpIntro'));
@@ -350,6 +519,7 @@ begin
   SpacePage.Add(CustomMessage('SpPass2'), True);
   SpacePage.Add(CustomMessage('SpKey'), False);
   SpacePage.Values[0] := 'user';
+  if Param('SPACEUSER') <> '' then SpacePage.Values[0] := Param('SPACEUSER');
 
   RestartImg := TBitmapImage.Create(WizardForm);
   RestartImg.Parent := WizardForm.FinishedPage;
@@ -371,8 +541,13 @@ begin
       RestartImg.Top := WizardForm.FinishedLabel.Top + WizardForm.FinishedLabel.Height + ScaleY(12);
       RestartImg.Visible := True;
     end else if InstallFailed then
-      WizardForm.FinishedLabel.Caption := CustomMessage('FinFail')
-    else
+    begin
+      { must not look like the normal success page }
+      WizardForm.FinishedHeadingLabel.Caption := CustomMessage('FinFailHead');
+      WizardForm.FinishedHeadingLabel.Font.Color := $002B39C0;  { red }
+      WizardForm.FinishedLabel.Caption := CustomMessage('FinFailWhy') + #13#10#13#10 + CustomMessage('FinFailReason') + #13#10 + FailReason + #13#10#13#10 +
+        CustomMessage('FinFailLog') + #13#10 + FailLog + #13#10#13#10 + CustomMessage('FinFail');
+    end else
       WizardForm.FinishedLabel.Caption := CustomMessage('FinOk') + #13#10#13#10 + CustomMessage('FinLimits') + #13#10#13#10 + StatusText;
   end;
 end;
@@ -388,7 +563,7 @@ begin
   Result := True;
   if CurPageID = ReqPage.ID then
   begin
-    if not (WinOk and VirtOk) then Result := Reject(CustomMessage('ReqFail'));
+    if not (WinOk and VirtOk and AdminOk) then Result := Reject(CustomMessage('ReqFail'));
   end
   else if CurPageID = WdPage.ID then
   begin
@@ -419,45 +594,61 @@ begin
   Result := rc;
 end;
 
-procedure FailWith(Msg, LogFile: String);
+procedure CollectValues();
 begin
-  InstallFailed := True;
-  MsgBox(Msg + #13#10 + LogFile, mbError, MB_OK);
+  if WizardSilent then Exit;  { silent: SilentChecks already filled them from the command line }
+  VServer := Trim(AccPage.Values[0]);
+  VToken := Trim(AccPage.Values[1]);
+  VName := Trim(AccPage.Values[2]);
+  VDir := Trim(WdPage.Values[0]);
+  VUser := Trim(SpacePage.Values[0]);
+  VPass := SpacePage.Values[1];
+  VKey := Trim(SpacePage.Values[3]);
 end;
 
 procedure DoInstall();
 var
-  App, Exe, InstLog, SetupLog, PwFile, Line, Token: String;
+  App, Exe, InstLog, SetupLog, PwFile, Line: String;
   rc: Integer;
   Raw: AnsiString;
 begin
   App := ExpandConstant('{app}');
   Exe := '"' + App + '\csnode.exe"';
-  InstLog := App + '\install.log';
-  SetupLog := App + '\setup.log';
+  InstLog := LogDir + '\install.log';
+  SetupLog := LogDir + '\setup.log';
   PwFile := ExpandConstant('{tmp}\cspw.txt');
+  CollectValues();
 
   WizardForm.StatusLabel.Caption := CustomMessage('StInstall');
-  rc := RunCmd(Exe + ' install --rootfs "' + App + '\csnode-linux-rootfs.tar.gz" --wsl-dir "' + Trim(WdPage.Values[0]) + '"', InstLog);
-  if rc = ExitReboot then begin RebootNeeded := True; Exit; end;
-  if rc <> 0 then begin FailWith(CustomMessage('FailInstall'), InstLog); Exit; end;
+  rc := RunCmd(Exe + ' install --rootfs "' + App + '\csnode-linux-rootfs.tar.gz" --wsl-dir "' + VDir + '"', InstLog);
+  if rc = ExitReboot then
+  begin
+    RebootNeeded := True;
+    SaveStringToFile(LogDir + '\install-result.log', 'RESTART NEEDED code=' + IntToStr(CodeReboot) + #13#10, False);
+    if WizardSilent then ExitProcess(CodeReboot);
+    Exit;
+  end;
+  if rc <> 0 then begin Fatal(CodeInstallLinux, CustomMessage('FailInstall'), InstLog); Exit; end;
 
   WizardForm.StatusLabel.Caption := CustomMessage('StSetup');
-  Token := Trim(AccPage.Values[1]);
-  Line := Exe + ' setup --yes --safe-defaults --server "' + Trim(AccPage.Values[0]) + '" --name ' + Trim(AccPage.Values[2]) +
-          ' --user ' + Trim(SpacePage.Values[0]) + ' --token "' + Token + '"';
-  if Trim(SpacePage.Values[3]) <> '' then Line := Line + ' --key "' + Trim(SpacePage.Values[3]) + '"';
-  if SpacePage.Values[1] <> '' then
+  Line := Exe + ' setup --yes --safe-defaults --server "' + VServer + '" --name ' + VName +
+          ' --user ' + VUser + ' --token "' + VToken + '"';
+  if VKey <> '' then Line := Line + ' --key "' + VKey + '"';
+  if VCpu <> '' then Line := Line + ' --cpu ' + VCpu;
+  if VMem <> '' then Line := Line + ' --memory ' + VMem;
+  if VDisk <> '' then Line := Line + ' --disk ' + VDisk;
+  if VPass <> '' then
   begin
-    SaveStringToFile(PwFile, SpacePage.Values[1] + #13#10, False);
+    SaveStringToFile(PwFile, VPass + #13#10, False);
     Line := Line + ' --password-stdin < "' + PwFile + '"';  { the password never goes on a command line }
   end;
   rc := RunCmd(Line, SetupLog);
   DeleteFile(PwFile);
-  if rc = ExitNameTaken then begin FailWith(CustomMessage('FailName'), SetupLog); Exit; end;
-  if rc = ExitUnreachable then begin FailWith(CustomMessage('FailServer'), SetupLog); Exit; end;
-  if rc <> 0 then begin FailWith(CustomMessage('FailSetup'), SetupLog); Exit; end;
+  if rc = ExitNameTaken then begin Fatal(CodeNameTaken, CustomMessage('FailName'), SetupLog); Exit; end;
+  if rc = ExitUnreachable then begin Fatal(CodeUnreachable, CustomMessage('FailServer'), SetupLog); Exit; end;
+  if rc <> 0 then begin Fatal(CodeSetup, CustomMessage('FailSetup'), SetupLog); Exit; end;
 
+  SaveStringToFile(LogDir + '\install-result.log', 'OK' + #13#10, False);
   { show the connection line (address and fingerprint) on the last page }
   RunCmd(Exe + ' status', ExpandConstant('{tmp}\status.txt'));
   if LoadStringFromFile(ExpandConstant('{tmp}\status.txt'), Raw) then StatusText := String(Raw);

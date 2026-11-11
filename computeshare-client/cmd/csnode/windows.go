@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/alishafiee1/computeshare-client/internal/release"
+	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 )
 
@@ -55,13 +56,18 @@ func preflight() {
 		}
 		k.Close()
 	}
-	if exec.Command("net", "session").Run() != nil {
-		die(1, "run as Administrator")
-	}
 	out, _ := exec.Command("powershell", "-NoProfile", "-Command", "(Get-CimInstance Win32_Processor).VirtualizationFirmwareEnabled -contains $true -or (Get-CimInstance Win32_ComputerSystem).HypervisorPresent").Output()
 	if !strings.Contains(strings.ToLower(string(out)), "true") {
 		die(1, "virtualization is disabled in BIOS")
 	}
+}
+
+// elevated reports whether this process runs with Administrator rights (UAC "run as administrator").
+func elevated() bool { return windows.GetCurrentProcessToken().IsElevated() }
+
+// startCmd is what keeps the distro (and so the node) alive after boot or logon.
+func startCmd() string {
+	return `wsl.exe -d ` + distro + ` -u root -- sh -c "systemctl start csnode; exec sleep infinity"`
 }
 
 // R6: .wslconfig limits vs requested
@@ -118,12 +124,20 @@ func install(rootfs, dataDir string) {
 		die(1, "امضای نسخه معتبر نیست؛ نصب متوقف شد. فایل را فقط از منبع رسمی دریافت کنید.\n(%v)", err)
 	}
 	if exec.Command("wsl.exe", "--status").Run() != nil {
+		// turning on the WSL Windows features is the one step that really needs Administrator rights
+		if !elevated() {
+			die(1, "WSL is not installed and installing it needs Administrator rights. Run the installer once as administrator (or install WSL yourself with: wsl --install --no-distribution, restart, then run this installer again)")
+		}
 		if err := wsl("--install", "--no-distribution").Run(); err != nil {
 			die(1, "wsl install failed: %v", err)
 		}
 		// resume after reboot
 		exe, _ := os.Executable()
-		exec.Command("reg", "add", `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce`, "/v", "csnode", "/d", `"`+exe+`" install --rootfs "`+rootfs+`" --wsl-dir "`+dir+`"`, "/f").Run()
+		hive := "HKCU"
+		if elevated() {
+			hive = "HKLM"
+		}
+		exec.Command("reg", "add", hive+`\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce`, "/v", "csnode", "/d", `"`+exe+`" install --rootfs "`+rootfs+`" --wsl-dir "`+dir+`"`, "/f").Run()
 		fmt.Println("WSL installed; reboot Windows, then run the installer again to finish.")
 		os.Exit(exitRebootNeeded) // the installer wizard shows its restart page on this code
 	}
@@ -139,17 +153,33 @@ func install(rootfs, dataDir string) {
 	fmt.Println("csnode-linux ready. Next: csnode setup")
 }
 
-// R4: a scheduled task (SYSTEM, at startup) keeps the distro + tunnel alive without a logon.
+// R4: with Administrator rights: a scheduled task (SYSTEM, at startup) keeps the distro + tunnel alive
+// without a logon. Without them (per-user install): a Run entry of the current user, which starts the
+// node at every logon of that user.
 func serviceInstall() {
-	exec.Command("schtasks", "/Create", "/F", "/RU", "SYSTEM", "/SC", "ONSTART", "/TN", "csnode",
-		"/TR", `wsl.exe -d `+distro+` -u root -- sh -c "systemctl start csnode; exec sleep infinity"`).Run()
-	exec.Command("schtasks", "/Run", "/TN", "csnode").Run()
+	if elevated() {
+		exec.Command("schtasks", "/Create", "/F", "/RU", "SYSTEM", "/SC", "ONSTART", "/TN", "csnode", "/TR", startCmd()).Run()
+		exec.Command("schtasks", "/Run", "/TN", "csnode").Run()
+		return
+	}
+	k, _, err := registry.CreateKey(registry.CURRENT_USER, `SOFTWARE\Microsoft\Windows\CurrentVersion\Run`, registry.SET_VALUE)
+	if err != nil {
+		fmt.Println("warning: could not register the logon start entry:", err)
+		return
+	}
+	defer k.Close()
+	k.SetStringValue("csnode", `cmd.exe /c start "" /min `+startCmd())
+	exec.Command("cmd.exe", "/c", "start", "", "/min", "wsl.exe", "-d", distro, "-u", "root", "--", "sh", "-c", "systemctl start csnode; exec sleep infinity").Start()
 }
 
 // R7
 func purge() {
 	wsl("-d", distro, "-u", "root", "--", "csnode", "leave", "--purge", "--yes").Run()
 	exec.Command("schtasks", "/Delete", "/F", "/TN", "csnode").Run()
+	if k, err := registry.OpenKey(registry.CURRENT_USER, `SOFTWARE\Microsoft\Windows\CurrentVersion\Run`, registry.SET_VALUE); err == nil {
+		k.DeleteValue("csnode")
+		k.Close()
+	}
 	wsl("--unregister", distro).Run()
 	fmt.Println("csnode removed (other WSL distros untouched)")
 }

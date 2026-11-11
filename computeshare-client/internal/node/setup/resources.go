@@ -7,7 +7,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"github.com/alishafiee1/computeshare-client/proto"
 )
@@ -30,14 +29,7 @@ func Detect() Resources {
 			}
 		}
 	}
-	var st syscall.Statfs_t
-	p := "/var/lib/incus"
-	if _, err := os.Stat(p); err != nil {
-		p = "/"
-	}
-	if syscall.Statfs(p, &st) == nil {
-		r.DiskGB = float64(st.Bavail) * float64(st.Bsize) / 1e9
-	}
+	r.DiskGB = freeDiskGB()
 	if out, err := exec.Command("nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader").Output(); err == nil {
 		r.GPU = strings.TrimSpace(strings.Split(string(out), "\n")[0])
 	}

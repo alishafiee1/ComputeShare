@@ -158,11 +158,11 @@ func VerifyModel(dir string) ([]string, error) {
 	var bad []string
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
-		sum, name, ok := strings.Cut(strings.TrimSpace(sc.Text()), "  ")
+		sum, name, ok := strings.Cut(strings.TrimSpace(sc.Text()), " ")
 		if !ok {
 			continue
 		}
-		name = strings.TrimPrefix(name, "*")
+		name = strings.TrimPrefix(strings.TrimLeft(name, " "), "*")
 		g, err := os.Open(filepath.Join(dir, filepath.Clean("/"+name)))
 		if err != nil {
 			bad = append(bad, name+" (missing)")

@@ -146,6 +146,16 @@ func TestCSRFAndOrigin(t *testing.T) {
 	}
 }
 
+// A browser sends "Origin: null" on form POSTs when the page has Referrer-Policy no-referrer,
+// and sameOrigin refuses it: the login form then always fails. The policy must stay same-origin.
+func TestReferrerPolicyKeepsOrigin(t *testing.T) {
+	p, _, _ := setup(t)
+	w := do(p, "GET", "/panel/login", nil, nil, "10.0.0.1")
+	if got := w.Header().Get("Referrer-Policy"); got != "same-origin" {
+		t.Fatal("Referrer-Policy must be same-origin, got", got)
+	}
+}
+
 func TestTokensApproveLogout(t *testing.T) {
 	p, st, be := setup(t)
 	c, csrf := login(t, p)

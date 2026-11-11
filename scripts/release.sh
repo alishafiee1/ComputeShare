@@ -90,7 +90,7 @@ build_into() { # build_into <outdir>
   # the installer with the release public key inserted (empty key = unsigned build, the installer refuses it)
   K="$(cat "$CLIENT/internal/release/release.pub")" awk '/^RELEASE_PUB=""$/{print "RELEASE_PUB=\"" ENVIRON["K"] "\""; next} {print}' "$CLIENT/installer/linux/install.sh" > "$out/install.sh"
   grep -q 'BEGIN PUBLIC KEY' "$out/install.sh" || die "the release key was not inserted into install.sh"
-  ( cd "$out" && sha256sum $(ls | grep -v -e '^SHA256SUMS' | sort) > SHA256SUMS )
+  ( cd "$out" && sha256sum $(ls | grep -v -e '^SHA256SUMS' | sort) | sed 's/ \*/  /' > SHA256SUMS ) # Git Bash writes " *name"; keep the Linux "  name" form
 }
 
 find_iscc() {

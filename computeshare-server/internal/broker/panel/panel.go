@@ -138,7 +138,8 @@ func (p *Panel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.Set("Content-Security-Policy", "default-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'")
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("X-Frame-Options", "DENY")
-	h.Set("Referrer-Policy", "no-referrer")
+	// same-origin (not no-referrer): with no-referrer browsers send "Origin: null" on the login form POST, which sameOrigin refuses
+	h.Set("Referrer-Policy", "same-origin")
 	h.Set("Cache-Control", "no-store")
 	if r.Method == http.MethodPost && !sameOrigin(r) {
 		http.Error(w, "cross-origin request refused", http.StatusForbidden)

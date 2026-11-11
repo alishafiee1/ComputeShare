@@ -26,7 +26,7 @@ get SHA256SUMS.sig
 printf '%s\n' "$RELEASE_PUB" > "$T/release.pub"
 openssl pkeyutl -verify -pubin -inkey "$T/release.pub" -rawin -in "$T/SHA256SUMS" -sigfile "$T/SHA256SUMS.sig" >/dev/null 2>&1 || { echo "$SIGFAIL"; exit 1; }
 for b in csnode cs csnode-authkeys cs-bench; do get "$b-linux-$A"; done
-( cd "$T" && grep -E " (csnode|cs|csnode-authkeys|cs-bench)-linux-$A\$" SHA256SUMS | sha256sum -c - ) || { echo "$SIGFAIL"; echo "checksum FAILED; nothing installed"; exit 1; }
+( cd "$T" && grep -E "[ *](csnode|cs|csnode-authkeys|cs-bench)-linux-$A\$" SHA256SUMS | sha256sum -c - ) || { echo "$SIGFAIL"; echo "checksum FAILED; nothing installed"; exit 1; }
 for b in csnode cs csnode-authkeys; do install -m 0755 "$T/$b-linux-$A" "$PREFIX/$b"; done
 # card 018: the helper `cs bench --run` uploads into a space keeps its arch in the name
 install -m 0755 "$T/cs-bench-linux-$A" "$PREFIX/cs-bench-linux-$A"

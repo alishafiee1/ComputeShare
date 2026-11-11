@@ -196,8 +196,9 @@ func VerifyFile(path string) error {
 	}
 	got := hex.EncodeToString(h.Sum(nil))
 	for _, l := range strings.Split(string(sums), "\n") {
-		sum, n, ok := strings.Cut(strings.TrimSpace(l), "  ")
-		if ok && strings.TrimPrefix(n, "*") == name {
+		// sha256sum writes "<sum>  <name>" on Linux and "<sum> *<name>" (binary mode) in Git Bash on Windows
+		sum, n, ok := strings.Cut(strings.TrimSpace(l), " ")
+		if ok && strings.TrimPrefix(strings.TrimLeft(n, " "), "*") == name {
 			if sum == got {
 				return nil
 			}

@@ -103,4 +103,11 @@ func TestVerifyFile(t *testing.T) {
 	if err := VerifyFile(filepath.Join(d, "rootfs.tar.gz")); err != nil {
 		t.Fatal(err)
 	}
+	// Git Bash on Windows writes "<sum> *<name>" (one space, binary mark): it must be found too
+	sums = []byte(hex.EncodeToString(h[:]) + " *rootfs.tar.gz\n")
+	os.WriteFile(filepath.Join(d, "SHA256SUMS"), sums, 0o644)
+	os.WriteFile(filepath.Join(d, "SHA256SUMS.sig"), Sign(priv, sums), 0o644)
+	if err := VerifyFile(filepath.Join(d, "rootfs.tar.gz")); err != nil {
+		t.Fatal("windows sha256sum format refused: ", err)
+	}
 }

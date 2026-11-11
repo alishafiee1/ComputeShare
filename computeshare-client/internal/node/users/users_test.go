@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"os"
+	"runtime"
 	"testing"
 
 	"golang.org/x/crypto/ssh"
@@ -43,7 +44,7 @@ func TestStore(t *testing.T) {
 		t.Fatal(err)
 	}
 	fi, _ := os.Stat(config.Path(File))
-	if fi.Mode().Perm() != 0o600 {
+	if runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 { // Windows has no unix mode bits
 		t.Fatal("users.json mode", fi.Mode())
 	}
 	s := Load()

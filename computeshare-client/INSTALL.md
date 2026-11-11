@@ -28,7 +28,62 @@ printf '%s' "$SPACE_PASSWORD" | sudo csnode setup --yes --name myBrotherPc --pas
 
 ## Windows 10 (21H2+) / 11
 
-Run `csnode-setup-<version>.exe` as administrator. It enables WSL2 (one reboot may be needed; setup continues by itself), imports the `csnode-linux` distro, and registers a startup task. Then open a terminal and run `csnode setup` — the same questions as on Linux. All `csnode` commands work the same in PowerShell. (The Windows installer is built from `installer/windows/csnode.iss`; it is not yet tested on real Windows hardware.)
+Run `csnode-setup-<version>.exe` (choose "all users"/administrator, or "only me" if WSL is already installed — see below). It enables WSL2 (one reboot may be needed; setup continues by itself), imports the `csnode-linux` distro, and registers a startup task. Then open a terminal and run `csnode setup` — the same questions as on Linux. All `csnode` commands work the same in PowerShell. (The Windows installer is built from `installer/windows/csnode.iss`; it is not yet tested on real Windows hardware.)
+
+### Windows: admin or not?
+
+| Step | Needs administrator? |
+|---|---|
+| Turning on WSL2 (`wsl --install`, only when WSL is **not** installed yet) | **Yes** |
+| Boot-time startup task (runs as SYSTEM, node starts without anyone logging in) | **Yes** |
+| Adding `csnode` to the machine-wide PATH, installing into `Program Files` | **Yes** |
+| WSL2 **already installed**: importing the `csnode-linux` distro, `csnode setup`, running the node | No |
+
+So: if WSL is already on this computer, choose **"Install for me only"** in the first dialog (or pass `/CURRENTUSER`). Files go to `%LOCALAPPDATA%\Programs\ComputeShare`, `csnode` is added to your own PATH, and the node starts **when you log on** (a Run entry in your user profile) instead of at boot. If WSL is missing, a per-user run stops on the system-check page and tells you to run again as administrator. (Not verified on a real second machine yet — treat the per-user mode as new.)
+
+### Windows: silent / unattended install
+
+Use a PowerShell, run in the folder with the installer:
+
+```powershell
+.\csnode-setup-<version>.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG="$env:TEMP\csnode-setup.log" `
+  /ACCEPT /SERVER=https://node.n3xus.ir /TOKENFILE=C:\secrets\token.txt /NODENAME=my-node-01 `
+  /WSLDIR=D:\ComputeShare /SPACEUSER=guest /SPACEPASSFILE=C:\secrets\pass.txt
+echo $LASTEXITCODE
+```
+
+Add `/CURRENTUSER` (no admin, WSL must already exist) or `/ALLUSERS` (admin; an elevated shell avoids the UAC prompt).
+
+| Parameter | Meaning |
+|---|---|
+| `/ACCEPT` | **required**: you accepted the terms in `consent.txt` |
+| `/SERVER=` | server address, `https://…` (default `https://node.n3xus.ir`) |
+| `/TOKEN=` or `/TOKENFILE=` | join token, or a file whose first line is the token (a file keeps it out of the process list) |
+| `/NODENAME=` | node name, 3–32 chars, letters/digits/dash, starts with a letter |
+| `/WSLDIR=` | folder for the Linux system file, local drive, ≥15 GB free (default: the drive with most free space) |
+| `/SPACEUSER=` | space user (default `user`) |
+| `/SPACEPASS=` or `/SPACEPASSFILE=` | space password, 12+ ASCII chars (optional if `/SPACEKEY` is given) |
+| `/SPACEKEY=` | SSH public key, one line starting with `ssh-` (optional if a password is given) |
+| `/CPU=` `/MEMORY=` `/DISK=` | limits, e.g. `4`, `8GiB`, `100GiB`. Not given = the same suggested safe values the questions offer |
+
+In the same way, the normal (non-silent) wizard is pre-filled by these parameters.
+
+**Exit codes** (0 = success). On any failure a reason is written to `%LOCALAPPDATA%\ComputeShare\logs\install-result.log`; the detailed logs are `install.log` and `setup.log` in the same folder (use Inno's `/LOG=` for the installer's own log).
+
+| Code | Meaning |
+|---|---|
+| 0 | installed and connected |
+| 20 | a parameter is missing or invalid (the log says which) |
+| 21 | `/ACCEPT` missing |
+| 22 | Windows too old or virtualization off in BIOS |
+| 23 | WSL is not installed and this run is not administrator |
+| 30 | installing WSL / the Linux system failed (`install.log`) |
+| 31 | node setup failed (`setup.log`) |
+| 32 | node name already taken on the server |
+| 33 | server not reachable |
+| 3010 | WSL was just installed: restart Windows, then run the same command again |
+
+When the wizard (non-silent) fails, the last page is red, says **"Installation FAILED"**, and shows the reason and the log path.
 
 ## After install
 
