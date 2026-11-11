@@ -65,6 +65,7 @@ Add `/CURRENTUSER` (no admin, WSL must already exist) or `/ALLUSERS` (admin; an 
 | `/SPACEPASS=` or `/SPACEPASSFILE=` | space password, 12+ ASCII chars (optional if `/SPACEKEY` is given) |
 | `/SPACEKEY=` | SSH public key, one line starting with `ssh-` (optional if a password is given) |
 | `/CPU=` `/MEMORY=` `/DISK=` | limits, e.g. `4`, `8GiB`, `100GiB`. Not given = the same suggested safe values the questions offer |
+| `/CLIENTONLY` | **client only**: installs just `cs.exe` and `csnode.exe` and adds the folder to the user PATH. No WSL, no Linux system, no node setup, and none of the parameters above are needed (not even `/ACCEPT`). Example: `csnode-setup-X.exe /CLIENTONLY /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CURRENTUSER`. Exit code 0 = installed; 24 = `cs.exe` is missing after the copy. Uninstall does not touch WSL. CI builds the installer with a tiny placeholder rootfs and the "UNSIGNED TEST BUILD" signature file, because `/CLIENTONLY` never uses them |
 
 In the same way, the normal (non-silent) wizard is pre-filled by these parameters.
 

@@ -5,6 +5,10 @@
 #if Ver == ""
   #error VERSION is not set (example: set VERSION=0.2.2 and run iscc csnode.iss)
 #endif
+; CI / client-only build: the three files below are only needed at COMPILE time (iscc checks they exist).
+; In /CLIENTONLY mode they are never installed. So CI can compile with a small placeholder
+; csnode-linux-rootfs.tar.gz and an "UNSIGNED TEST BUILD" SHA256SUMS.sig (see scripts/release.sh build_installer unsigned).
+; Silent client-only install:  csnode-setup-X.exe /CLIENTONLY /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CURRENTUSER
 #define HaveFa FileExists(CompilerPath + "Languages\Farsi.isl")
 
 [Setup]
@@ -40,9 +44,9 @@ Name: "fa"; MessagesFile: "compiler:Languages\Farsi.isl"
 [Files]
 Source: "..\..\dist\csnode-windows-amd64.exe"; DestDir: "{app}"; DestName: "csnode.exe"
 Source: "..\..\dist\cs-windows-amd64.exe"; DestDir: "{app}"; DestName: "cs.exe"
-Source: "csnode-linux-rootfs.tar.gz"; DestDir: "{app}"
-Source: "SHA256SUMS"; DestDir: "{app}"
-Source: "SHA256SUMS.sig"; DestDir: "{app}"
+Source: "csnode-linux-rootfs.tar.gz"; DestDir: "{app}"; Check: not ClientOnly
+Source: "SHA256SUMS"; DestDir: "{app}"; Check: not ClientOnly
+Source: "SHA256SUMS.sig"; DestDir: "{app}"; Check: not ClientOnly
 Source: "assets\csnode.ico"; DestDir: "{app}"
 Source: "assets\finish-panel.bmp"; Flags: dontcopy
 Source: "assets\warning.bmp"; Flags: dontcopy
@@ -53,7 +57,10 @@ Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environmen
 Root: HKCU; Subkey: "Environment"; ValueType: expandsz; ValueName: "Path"; ValueData: "{olddata};{app}"; Check: NeedsAddPathUser
 
 [UninstallRun]
-Filename: "{app}\csnode.exe"; Parameters: "uninstall"; Flags: waituntilterminated; RunOnceId: "csnodepurge"
+Filename: "{app}\csnode.exe"; Parameters: "uninstall"; Flags: waituntilterminated; RunOnceId: "csnodepurge"; Check: not WasClientOnlyInstall
+
+[UninstallDelete]
+Type: files; Name: "{app}\client-only.flag"
 
 [CustomMessages]
 en.ReqTitle=System check
@@ -110,6 +117,7 @@ en.NeedAdminWsl=WSL is not installed on this computer, and turning it on needs a
 en.SilentBad=Silent install: invalid or missing parameter:
 en.SilentNoAccept=Silent install: you must pass /ACCEPT to confirm that you accepted the terms (consent.txt).
 en.NoSecretFile=Cannot read the file given for the secret value:
+en.FinClientOk=ComputeShare client (cs) is installed. Open a NEW terminal and run: cs version
 en.FinLimits=CPU, memory and disk limits use safe suggested values. Change them later in the app.
 #if HaveFa
 fa.ReqTitle=بررسی سیستم
@@ -166,6 +174,7 @@ fa.NeedAdminWsl=WSL روی این کامپیوتر نصب نیست و روشن �
 fa.SilentBad=نصب بی‌صدا: پارامتر نامعتبر یا جاافتاده:
 fa.SilentNoAccept=نصب بی‌صدا: باید /ACCEPT بدهی تا قبول شرایط (consent.txt) تأیید شود.
 fa.NoSecretFile=فایلِ مقدار محرمانه خوانده نشد:
+fa.FinClientOk=کلاینت ComputeShare (دستور cs) نصب شد. یک ترمینال جدید باز کن و بزن: cs version
 fa.FinLimits=سقف پردازنده، رم و دیسک روی مقدارهای امن پیشنهادی است. بعداً داخل برنامه عوضش کن.
 #endif
 
@@ -191,6 +200,7 @@ const
   CodeSetup = 31;          { node setup failed }
   CodeNameTaken = 32;      { node name already used on the server }
   CodeUnreachable = 33;    { server not reachable }
+  CodeClientFiles = 24;    { /CLIENTONLY: cs.exe is missing after the copy }
   CodeReboot = 3010;       { WSL was just installed: restart Windows, then run the same command again }
 
 var
@@ -203,6 +213,7 @@ var
   StatusText: String;
   FailReason, FailLog, LogDir: String;
   { the values of the questions: from the wizard pages, or from the command line when silent }
+  ClientOnlyMode: Boolean;  { /CLIENTONLY: install only cs.exe + csnode.exe and the PATH entry; no WSL, no node setup }
   VServer, VToken, VName, VDir, VUser, VPass, VKey, VCpu, VMem, VDisk: String;
 
 { ---- command-line parameters (/SERVER=... style; see INSTALL.md) ---- }
@@ -248,6 +259,17 @@ begin
       Result := Trim(Result);
     end else Err := CustomMessage('NoSecretFile') + ' /' + Name + 'FILE';
   end;
+end;
+
+function ClientOnly(): Boolean;
+begin
+  Result := ClientOnlyMode;
+end;
+
+{ uninstall: a client-only install has no Linux system to purge, so csnode uninstall is skipped }
+function WasClientOnlyInstall(): Boolean;
+begin
+  Result := FileExists(ExpandConstant('{app}\client-only.flag'));
 end;
 
 function NeedsAddPathIn(Root: Integer; Sub: String): Boolean;
@@ -456,8 +478,10 @@ end;
 procedure SilentChecks();
 var Err: String;
 begin
+  if ClientOnlyMode then Exit;  { nothing to ask or check: no WSL, no node, no consent for a node }
   if not HasSwitch('ACCEPT') then begin Fatal(CodeNoAccept, CustomMessage('SilentNoAccept'), ''); Exit; end;
   Err := '';
+  { TODO: the default server https://node.n3xus.ir is being dropped (domain going away). Change it here AND in InitializeWizard when the new address is decided. }
   VServer := Param('SERVER'); if VServer = '' then VServer := 'https://node.n3xus.ir';
   VToken := SecretParam('TOKEN', Err);
   VName := Param('NODENAME');
@@ -489,6 +513,7 @@ begin
   LogDir := ExpandConstant('{localappdata}\ComputeShare\logs');
   ForceDirectories(LogDir);
   DeleteFile(LogDir + '\install-result.log');
+  ClientOnlyMode := HasSwitch('CLIENTONLY');
   VCpu := Param('CPU');   { empty = the suggested safe value }
   VMem := Param('MEMORY');
   VDisk := Param('DISK');
@@ -525,6 +550,7 @@ begin
   AccPage.Add(CustomMessage('Server'), False);
   AccPage.Add(CustomMessage('Token'), True);
   AccPage.Add(CustomMessage('NodeName'), False);
+  { TODO: same default as in SilentChecks (domain is being dropped) }
   AccPage.Values[0] := 'https://node.n3xus.ir';
   { command-line values prefill the pages (and are the answers when the install is silent) }
   if Param('SERVER') <> '' then AccPage.Values[0] := Param('SERVER');
@@ -566,7 +592,9 @@ begin
       WizardForm.FinishedHeadingLabel.Font.Color := $002B39C0;  { red }
       WizardForm.FinishedLabel.Caption := CustomMessage('FinFailWhy') + #13#10#13#10 + CustomMessage('FinFailReason') + #13#10 + FailReason + #13#10#13#10 +
         CustomMessage('FinFailLog') + #13#10 + FailLog + #13#10#13#10 + CustomMessage('FinFail');
-    end else
+    end else if ClientOnlyMode then
+      WizardForm.FinishedLabel.Caption := CustomMessage('FinClientOk')
+    else
       WizardForm.FinishedLabel.Caption := CustomMessage('FinOk') + #13#10#13#10 + CustomMessage('FinLimits') + #13#10#13#10 + StatusText;
   end;
 end;
@@ -582,13 +610,13 @@ end;
 { silent installs take every answer from the command line (SilentChecks); the wizard pages are never used }
 function ShouldSkipPage(PageID: Integer): Boolean;
 begin
-  Result := WizardSilent and ((PageID = ReqPage.ID) or (PageID = WdPage.ID) or (PageID = AccPage.ID) or (PageID = SpacePage.ID));
+  Result := (WizardSilent or ClientOnlyMode) and ((PageID = ReqPage.ID) or (PageID = WdPage.ID) or (PageID = AccPage.ID) or (PageID = SpacePage.ID));
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
 begin
   Result := True;
-  if WizardSilent then Exit;
+  if WizardSilent or ClientOnlyMode then Exit;
   if CurPageID = ReqPage.ID then
   begin
     if not (WinOk and VirtOk and AdminOk) then Result := Reject(CustomMessage('ReqFail'));
@@ -624,7 +652,7 @@ end;
 
 procedure CollectValues();
 begin
-  if WizardSilent then Exit;  { silent: SilentChecks already filled them from the command line }
+  if WizardSilent or ClientOnlyMode then Exit;  { silent: SilentChecks already filled them from the command line }
   VServer := Trim(AccPage.Values[0]);
   VToken := Trim(AccPage.Values[1]);
   VName := Trim(AccPage.Values[2]);
@@ -645,6 +673,14 @@ begin
   InstLog := LogDir + '\install.log';
   SetupLog := LogDir + '\setup.log';
   PwFile := ExpandConstant('{tmp}\cspw.txt');
+  if ClientOnlyMode then
+  begin
+    { client only: cs.exe / csnode.exe and the PATH entry are already done by the normal install; just verify and mark }
+    if not FileExists(App + '\cs.exe') then begin Fatal(CodeClientFiles, 'cs.exe', App); Exit; end;
+    SaveStringToFile(App + '\client-only.flag', '1' + #13#10, False);
+    SaveStringToFile(LogDir + '\install-result.log', 'OK client-only' + #13#10, False);
+    Exit;
+  end;
   CollectValues();
 
   WizardForm.StatusLabel.Caption := CustomMessage('StInstall');

@@ -1,0 +1,240 @@
+# CI: unit tests on Linux and Windows, the real end-to-end test (broker + node + Incus space + cs client),
+# and the Windows installer in client-only mode. No secrets live in this file.
+#
+# Optional, set in GitHub (Settings -> Secrets and variables -> Actions):
+#   secret   CS_JOIN_TOKEN   a join token of the real broker ("rodi")
+#   variable CS_BROKER_URL   the real broker address, e.g. https://<host>
+# Both set  -> the Linux job also registers a short-lived CI node on that broker (step "join rodi broker").
+# Not set (or a pull request from a fork, where GitHub hides secrets) -> that step prints "skipped" and passes.
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: computeshare-client/go.mod
+          cache-dependency-path: |
+            computeshare-client/go.sum
+            computeshare-server/go.sum
+
+      - name: Go vet and tests (client and server)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # same as scripts/release.sh step 2 on Linux
+          (cd computeshare-client && go vet ./... && go test -count=1 ./...)
+          (cd computeshare-server && go vet ./... && go test -count=1 ./internal/... ./e2e)
+
+      - name: Install Incus and sshpass
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -q
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q incus sshpass
+          sudo adduser "$USER" incus-admin || true   # the tests use sudo anyway; this only helps manual debugging
+          sudo systemctl start incus.socket incus.service || true
+          sudo incus admin waitready --timeout 120
+          incus --version
+
+      - name: Let Incus containers reach the network (runner firewall)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # GitHub runners have Docker, which sets the iptables FORWARD policy to DROP.
+          # That silently kills the traffic of every Incus container, so open it up (the runner is a throw-away VM).
+          sudo sysctl -w net.ipv4.ip_forward=1
+          sudo iptables -P FORWARD ACCEPT
+          sudo ip6tables -P FORWARD ACCEPT || true
+          sudo iptables -I DOCKER-USER -j ACCEPT 2>/dev/null || true
+          sudo iptables -S FORWARD | head -5
+
+      - name: System e2e (real csbroker + csnode + Incus space + cs client)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # the script prints PASS/FAIL/SKIP lines; any FAIL (or a non-zero exit) fails the job
+          bash computeshare-client/e2e/system_e2e.sh 2>&1 | tee "$RUNNER_TEMP/system_e2e.log"
+          rc=${PIPESTATUS[0]}
+          if grep -q '^FAIL' "$RUNNER_TEMP/system_e2e.log"; then
+            echo "::error::system_e2e has FAIL lines"; grep '^FAIL' "$RUNNER_TEMP/system_e2e.log"; exit 1
+          fi
+          if [ "$rc" -ne 0 ]; then echo "::error::system_e2e exited with $rc"; exit "$rc"; fi
+          grep -q ' passed, 0 failed' "$RUNNER_TEMP/system_e2e.log" || { echo "::error::no summary line: the script did not finish"; exit 1; }
+
+      - name: Show logs when the e2e failed
+        if: failure()
+        shell: bash
+        run: |
+          W=/tmp/cs-sys-e2e
+          for f in setup.log broker.log node.log; do echo "=== $f"; tail -n 40 "$W/$f" 2>/dev/null || true; done
+          sudo iptables -S FORWARD | head -10 || true
+          sudo incus list 2>/dev/null || true
+
+      - name: join rodi broker (optional)
+        shell: bash
+        env:
+          CS_JOIN_TOKEN: ${{ secrets.CS_JOIN_TOKEN }}
+          CS_BROKER_URL: ${{ vars.CS_BROKER_URL }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CS_JOIN_TOKEN:-}" ] || [ -z "${CS_BROKER_URL:-}" ]; then
+            echo "skipped: CS_JOIN_TOKEN/CS_BROKER_URL not set"; exit 0
+          fi
+          echo "::add-mask::$CS_JOIN_TOKEN"
+          case "$CS_BROKER_URL" in https://*) ;; *) echo "::error::CS_BROKER_URL must start with https://"; exit 1;; esac
+          BIN="$RUNNER_TEMP/join-bin"; D="$RUNNER_TEMP/join-node"; NAME="ci-$RUN_ID"
+          mkdir -p "$BIN" "$D"
+          (cd computeshare-client && go build -o "$BIN/" ./cmd/csnode ./cmd/csnode-authkeys)
+          ssh-keygen -q -t ed25519 -N '' -f "$D/key"
+          N="sudo env CSNODE_DIR=$D/cfg CSNODE_AUTHKEYS=$BIN/csnode-authkeys $BIN/csnode"
+          cleanup() {
+            $N stop >/dev/null 2>&1 || true
+            sudo pkill -f "$BIN/csnode run" 2>/dev/null || true
+            $N leave >/dev/null 2>&1 || true        # frees the name on the broker when it is allowed
+            sudo incus delete -f "cs-$NAME" >/dev/null 2>&1 || true
+            sudo rm -rf "$D"
+          }
+          trap cleanup EXIT
+          # the token goes in through stdin (setup asks for it there), never on a command line or in the log
+          rc=0
+          printf '%s\n' "$CS_JOIN_TOKEN" | $N setup --yes --name "$NAME" --key "$(cat "$D/key.pub")" \
+            --server "$CS_BROKER_URL" --image images:debian/12 --mirror off >"$D/setup.log" 2>&1 || rc=$?
+          tail -n 15 "$D/setup.log"
+          if [ "$rc" -ne 0 ]; then echo "::error::csnode setup against the broker failed (rc=$rc)"; exit "$rc"; fi
+          $N status | grep -E '^(name|server|registered):'
+          $N status | grep -q '^registered: true' || { echo "::error::node did not register"; exit 1; }
+          $N run >"$D/run.log" 2>&1 &
+          sleep 15
+          if curl -fsS "$CS_BROKER_URL/v1/nodes" | grep -q "\"name\":\"$NAME\""; then
+            echo "result: node $NAME is VISIBLE on the broker (approved/online or auto-approved)"
+          else
+            echo "result: node $NAME registered, status = pending admin approval (hidden from the public list). That is OK."
+          fi
+          # note: a pending CI node may stay in the broker's pending list; deny/remove names starting with ci- in the broker panel
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: computeshare-client/go.mod
+          cache-dependency-path: |
+            computeshare-client/go.sum
+            computeshare-server/go.sum
+
+      - name: Go build, vet and tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd computeshare-client
+          go build ./...
+          go test -count=1 ./...                  # the node packages pass natively on Windows too (commit f950916)
+          GOOS=linux go vet ./...                 # type-check the Linux-only node code
+          cd ../computeshare-server
+          go vet ./...
+
+      - name: Build cs, csnode and csbroker for Windows
+        shell: bash
+        run: |
+          set -euo pipefail
+          VER="0.0.0-ci+${GITHUB_SHA::7}"
+          LD="-s -w -buildid= -X main.version=$VER"
+          mkdir -p "$RUNNER_TEMP/stage/dist" "$RUNNER_TEMP/stage/installer"
+          export CGO_ENABLED=0 GOOS=windows GOARCH=amd64
+          for c in cs csnode; do
+            (cd computeshare-client && go build -trimpath -buildvcs=false -ldflags "$LD" -o "$RUNNER_TEMP/stage/dist/$c-windows-amd64.exe" "./cmd/$c")
+          done
+          (cd computeshare-server && go build -trimpath -buildvcs=false -ldflags "$LD" -o "$RUNNER_TEMP/csbroker.exe" ./cmd/csbroker)
+          ls -l "$RUNNER_TEMP/stage/dist" "$RUNNER_TEMP/csbroker.exe"
+
+      - name: Compile the installer (unsigned test build, placeholder rootfs)
+        shell: bash
+        run: |
+          set -euo pipefail
+          ISCC="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
+          if [ ! -x "$ISCC" ]; then choco install innosetup -y --no-progress; fi
+          [ -x "$ISCC" ] || { echo "::error::ISCC.exe not found after install"; exit 1; }
+          S="$RUNNER_TEMP/stage/installer/windows"
+          cp -r computeshare-client/installer/windows "$S"
+          # same as scripts/release.sh build_installer unsigned, but the 480 MB rootfs is a tiny placeholder.
+          # /CLIENTONLY never installs or checks these three files; iscc only needs them to exist.
+          echo "placeholder, not a real rootfs" > "$S/csnode-linux-rootfs.tar.gz"
+          (cd "$S" && sha256sum csnode-linux-rootfs.tar.gz > SHA256SUMS)
+          echo "UNSIGNED TEST BUILD" > "$S/SHA256SUMS.sig"
+          (cd "$S" && VERSION=0.0.0-ci "$ISCC" csnode.iss) | tail -n 8
+          ls -l "$S/Output"
+
+      - name: Silent install, client only
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $setup = Join-Path $env:RUNNER_TEMP 'stage\installer\windows\Output\csnode-setup-0.0.0-ci.exe'
+          $dir = Join-Path $env:RUNNER_TEMP 'cs-client'
+          $log = Join-Path $env:RUNNER_TEMP 'cs-install.log'
+          $p = Start-Process -FilePath $setup -Wait -PassThru -ArgumentList @(
+            '/CLIENTONLY', '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', "/DIR=`"$dir`"", "/LOG=`"$log`"")
+          Write-Host "installer exit code: $($p.ExitCode)"
+          if ($p.ExitCode -ne 0) { throw "installer failed with exit code $($p.ExitCode)" }
+          if (-not (Test-Path "$dir\cs.exe")) { throw 'cs.exe was not installed' }
+          if (Test-Path "$dir\csnode-linux-rootfs.tar.gz") { throw 'client-only must not copy the rootfs' }
+          if ((Get-Content $log -Raw) -match 'wsl\.exe') { throw 'client-only touched WSL' }
+          $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+          if (($userPath -split ';') -notcontains $dir) { throw 'the install folder is not in the user PATH' }
+          & "$dir\cs.exe" version
+          if ($LASTEXITCODE -ne 0) { throw "cs version failed ($LASTEXITCODE)" }
+          "CS_DIR=$dir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Installed cs.exe connects to a local csbroker
+        shell: pwsh
+        run: |
+          # csbroker is a plain Go program and runs fine on Windows, so the broker is started right here
+          # (random admin password/token, nothing printed). No WSL node on Windows: the node side is covered by the Linux job.
+          $work = Join-Path $env:RUNNER_TEMP 'cs-win-smoke'
+          & pwsh -NoProfile -File computeshare-client/e2e/windows_client_smoke.ps1 -CsExe "$env:CS_DIR\cs.exe" -BrokerExe "$env:RUNNER_TEMP\csbroker.exe" -Work $work
+          if ($LASTEXITCODE -ne 0) { throw "client smoke test failed ($LASTEXITCODE)" }
+
+      - name: Uninstall
+        if: always()
+        shell: pwsh
+        run: |
+          $u = if ($env:CS_DIR) { Join-Path $env:CS_DIR 'unins000.exe' } else { '' }
+          if ($u -and (Test-Path $u)) {
+            $p = Start-Process $u -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait -PassThru
+            Write-Host "uninstall exit code: $($p.ExitCode)"
+          }
+
+      - name: Collect logs
+        if: failure()
+        shell: pwsh
+        run: |
+          $d = Join-Path $env:RUNNER_TEMP 'cs-logs'
+          New-Item -ItemType Directory -Force -Path $d | Out-Null
+          foreach ($f in @("$env:RUNNER_TEMP/cs-install.log", "$env:RUNNER_TEMP/cs-win-smoke/broker.out.log", "$env:RUNNER_TEMP/cs-win-smoke/broker.err.log")) {
+            if (Test-Path $f) { Copy-Item $f $d }
+          }
+          Get-ChildItem "$env:LOCALAPPDATA\ComputeShare\logs" -Filter *.log -ErrorAction SilentlyContinue | Copy-Item -Destination $d
+
+      - name: Upload installer log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer-logs
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/cs-logs
