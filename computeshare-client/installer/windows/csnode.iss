@@ -71,7 +71,7 @@ en.AccIntro=Enter the server address, the join token you received, and a name fo
 en.Server=Server address:
 en.Token=Join token:
 en.NodeName=Node name (letters, digits, dash; 3-32 characters, starts with a letter):
-en.BadServer=Server address must start with https:// and contain only letters, digits and . : / - _
+en.BadServer=Server address must start with https:// (http:// only for 127.0.0.1 or localhost) and contain only letters, digits and . : / - _
 en.BadToken=Join token is empty or has unusual characters.
 en.BadName=Node name must be 3-32 characters: letters, digits or dash, starting with a letter.
 en.WdTitle=Where to keep the Linux system
@@ -224,7 +224,7 @@ end;
 
 { value of /NAME=... or, if absent, the first line of the file given in /NAMEFILE=... (keeps secrets off the command line) }
 function SecretParam(Name: String; var Err: String): String;
-var f: String; Raw: AnsiString; p: Integer;
+var f: String; Raw: AnsiString; p, c: Integer;
 begin
   Result := Param(Name);
   f := Param(Name + 'FILE');
@@ -232,11 +232,20 @@ begin
   begin
     if LoadStringFromFile(f, Raw) then
     begin
-      Result := String(Raw);
-      p := Pos(#10, Result);
-      if p > 0 then Result := Copy(Result, 1, p - 1);
-      p := Pos(#13, Result);
-      if p > 0 then Result := Copy(Result, 1, p - 1);
+      { byte-wise: skip UTF-8 / UTF-16 BOMs and the NUL bytes of UTF-16 text, stop at the first line end }
+      Result := '';
+      for p := 1 to Length(Raw) do
+      begin
+        c := Ord(Raw[p]);
+        if (c = 10) or (c = 13) then Break;
+        if (c = 0) or (c = $EF) or (c = $BB) or (c = $BF) or (c = $FE) or (c = $FF) then
+        begin
+          { these bytes only appear in BOMs here; real secrets are ASCII }
+          Continue;
+        end;
+        Result := Result + Chr(c);
+      end;
+      Result := Trim(Result);
     end else Err := CustomMessage('NoSecretFile') + ' /' + Name + 'FILE';
   end;
 end;
@@ -290,6 +299,16 @@ end;
 function ValidServer(S: String): Boolean;
 begin
   Result := (Pos('https://', S) = 1) and (Length(S) > 12) and AllChars(S, Letters + Digits + ':/.-_');
+  { plain http:// is accepted only for a broker on this same machine (127.0.0.1 or localhost), for local testing }
+  if (not Result) and (Pos('http://', S) = 1) and AllChars(S, Letters + Digits + ':/.-_') then
+  begin
+    S := Copy(S, 8, Length(S));
+    if (Pos('127.0.0.1', S) = 1) or (Pos('localhost', S) = 1) then
+    begin
+      S := Copy(S, 10, Length(S));  { both host names are 9 characters }
+      Result := (S = '') or (S[1] = ':') or (S[1] = '/');
+    end;
+  end;
 end;
 
 function IsAscii(S: String): Boolean;
@@ -420,7 +439,7 @@ begin
   SaveStringToFile(LogDir + '\install-result.log', 'FAILED code=' + IntToStr(Code) + #13#10 + Msg + #13#10 + LogFile + #13#10, False);
   if WizardSilent then ExitProcess(Code);
   InstallFailed := True;
-  MsgBox(Msg + #13#10 + LogFile, mbError, MB_OK);
+  SuppressibleMsgBox(Msg + #13#10 + LogFile, mbError, MB_OK, IDOK);
 end;
 
 function ValidLimit(S: String): Boolean;
@@ -554,13 +573,22 @@ end;
 
 function Reject(Msg: String): Boolean;
 begin
-  MsgBox(Msg, mbError, MB_OK);
+  { silent: never a dialog; log and exit with the bad-parameter code }
+  if WizardSilent then Fatal(CodeBadParam, Msg, '');
+  SuppressibleMsgBox(Msg, mbError, MB_OK, IDOK);
   Result := False;
+end;
+
+{ silent installs take every answer from the command line (SilentChecks); the wizard pages are never used }
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  Result := WizardSilent and ((PageID = ReqPage.ID) or (PageID = WdPage.ID) or (PageID = AccPage.ID) or (PageID = SpacePage.ID));
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
 begin
   Result := True;
+  if WizardSilent then Exit;
   if CurPageID = ReqPage.ID then
   begin
     if not (WinOk and VirtOk and AdminOk) then Result := Reject(CustomMessage('ReqFail'));
