@@ -67,11 +67,22 @@ func EnsureIncus(mirror string, out func(string)) error {
 			return fmt.Errorf("incus install failed: %v", err)
 		}
 	}
+	fixRootPerm(out)
 	if err := initIncus(out); err != nil {
 		return err
 	}
 	EnsureLXCFS(out) // card 016 R1: the space shows its own limits in free / nproc
 	return nil
+}
+
+// fixRootPerm makes "/" traversable. A rootfs built from a private temp dir has "/" as 0700 owned
+// by a normal user; then LXC cannot start any container ("Could not access /var").
+func fixRootPerm(out func(string)) {
+	if st, err := os.Stat("/"); err == nil && st.IsDir() && st.Mode().Perm()&0o055 != 0o055 {
+		out("fixing permissions of / (was " + st.Mode().Perm().String() + ")")
+		os.Chmod("/", 0o755)
+		os.Chown("/", 0, 0)
+	}
 }
 
 // initIncus replaces `incus admin init --minimal`: its automatic subnet search fails on hosts with
@@ -265,6 +276,17 @@ func CreateSpace(o SpaceOpts, out func(string)) (hostKey string, err error) {
 	}
 	if o.Password == "" && len(o.Keys) == 0 {
 		return "", fmt.Errorf("set a password or at least one public key")
+	}
+	if incus.Exists(inst) {
+		// leftover of an earlier failed setup: a stopped space that cannot start is deleted and recreated
+		if st, err := incus.GetState(inst); err == nil && st.Status != "Running" {
+			if err := incus.Start(inst); err != nil {
+				out("old space " + inst + " cannot start (" + err.Error() + "); deleting it and creating it again")
+				if err := incus.Delete(inst); err != nil {
+					return "", err
+				}
+			}
+		}
 	}
 	if !incus.Exists(inst) {
 		out("creating space " + inst + " ...")

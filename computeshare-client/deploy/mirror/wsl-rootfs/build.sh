@@ -9,5 +9,6 @@ echo "deb $MIRROR/debian bookworm-backports main" | sudo tee "$R/etc/apt/sources
 sudo chroot "$R" sh -c 'apt-get update && apt-get install -y -t bookworm-backports incus && apt-get clean'
 printf '[boot]\nsystemd=true\n[user]\ndefault=root\n[interop]\nappendWindowsPath=false\n' | sudo tee "$R/etc/wsl.conf" >/dev/null
 sudo install -m755 "$BIN/csnode" "$BIN/csnode-authkeys" "$R/usr/local/bin/"
+sudo chown root:root "$R"; sudo chmod 755 "$R"   # mktemp -d gives 0700 + the caller as owner; "/" must be 0755 root or LXC cannot start containers
 sudo tar -C "$R" -czf "$OUT" .
 sha256sum "$OUT"
